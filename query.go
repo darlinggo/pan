@@ -9,6 +9,9 @@ import (
 type Query struct {
 	SQL string
 	Args []interface{}
+	IncludesWhere bool
+	IncludesOrder bool
+	IncludesLimit bool
 }
 
 func New() *Query{
@@ -65,5 +68,35 @@ func (q *Query) String() string {
 			outputPos += 1
 		}
 	}
-	return string(output)
+	return string(output)+";"
+}
+
+func (q *Query) IncludeWhere() {
+	q.SQL = strings.TrimSpace(q.SQL)
+	q.SQL += " "
+	if q.IncludesWhere {
+		return
+	}
+	q.SQL += "WHERE "
+	q.IncludesWhere = true
+}
+
+func (q *Query) IncludeOrder() {
+	q.SQL = strings.TrimSpace(q.SQL)
+	q.SQL += " "
+	if q.IncludesOrder {
+		return
+	}
+	q.SQL += "ORDER BY "
+	q.IncludesOrder = true
+}
+
+func (q *Query) IncludeLimit(limit int) {
+	q.SQL = strings.TrimSpace(q.SQL)
+	if q.IncludesLimit {
+		return
+	}
+	q.SQL += " LIMIT $1"
+	q.Args = append(q.Args, limit)
+	q.IncludesLimit = true
 }

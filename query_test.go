@@ -11,7 +11,7 @@ type queryTest struct {
 
 var queryTests = []queryTest{
 	queryTest{
-		ExpectedResult: "This query expects $1 one arg",
+		ExpectedResult: "This query expects $1 one arg;",
 		Query: &Query{
 			SQL: "This query expects ? one arg",
 			Args: []interface{}{0},
@@ -20,40 +20,40 @@ var queryTests = []queryTest{
 	queryTest{
 		ExpectedResult: "",
 		Query: &Query{
-			SQL: "This query expects ? one arg but won't get it",
+			SQL: "This query expects ? one arg but won't get it;",
 			Args: []interface{}{},
 		},
 	},
 	queryTest{
 		ExpectedResult: "",
 		Query: &Query{
-			SQL: "This query expects no arguments but will get one",
+			SQL: "This query expects no arguments but will get one;",
 			Args: []interface{}{0},
 		},
 	},
 	queryTest{
 		ExpectedResult: "",
 		Query: &Query{
-			SQL: "This query expects ? two args ? but will get one",
+			SQL: "This query expects ? two args ? but will get one;",
 			Args: []interface{}{0},
 		},
 	},
 	queryTest{
 		ExpectedResult: "",
 		Query: &Query{
-			SQL: "This query expects ? ? two args but will get three",
+			SQL: "This query expects ? ? two args but will get three;",
 			Args: []interface{}{0, 1, 2},
 		},
 	},
 	queryTest{
-		ExpectedResult: "Unicode test 世 $1",
+		ExpectedResult: "Unicode test 世 $1;",
 		Query: &Query{
 			SQL: "Unicode test 世 ?",
 			Args: []interface{}{0},
 		},
 	},
 	queryTest{
-		ExpectedResult: "Unicode boundary test $1 "+string(rune(0x80)),
+		ExpectedResult: "Unicode boundary test $1 "+string(rune(0x80))+";",
 		Query: &Query{
 			SQL: "Unicode boundary test ? "+string(rune(0x80)),
 			Args: []interface{}{0},
