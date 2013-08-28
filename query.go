@@ -2,28 +2,31 @@ package pan
 
 import (
 	"fmt"
+	"math"
+	"reflect"
 	"strings"
 	"unicode/utf8"
 )
 
 type Query struct {
-	SQL string
-	Args []interface{}
+	SQL           string
+	Args          []interface{}
+	Expressions   []string
 	IncludesWhere bool
 	IncludesOrder bool
 	IncludesLimit bool
 }
 
-func New() *Query{
-	return &Query {
-		SQL: "",
+func New() *Query {
+	return &Query{
+		SQL:  "",
 		Args: []interface{}{},
 	}
 }
 
 type WrongNumberArgsError struct {
 	NumExpected int
-	NumFound int
+	NumFound    int
 }
 
 func (e WrongNumberArgsError) Error() string {
@@ -39,6 +42,13 @@ func (q *Query) checkCounts() error {
 	return nil
 }
 
+func (q *Query) Generate(join string) string {
+	if len(q.Expressions) > 0 {
+		q.FlushExpressions(join)
+	}
+	return q.String()
+}
+
 func (q *Query) String() string {
 	if err := q.checkCounts(); err != nil {
 		return ""
@@ -47,9 +57,20 @@ func (q *Query) String() string {
 	var r rune
 	var count = 1
 	replacementRune, _ := utf8.DecodeRune([]byte("?"))
-	toReplace := strings.Count(q.SQL, "?")
-	bytesNeeded := len(q.SQL) + (toReplace/10) + 1 // we're adding an extra character, we need to buffer for it
-	output := make([]byte, bytesNeeded)
+	terminator := []byte(";")
+	toReplace := float64(strings.Count(q.SQL, "?"))
+	bytesNeeded := float64(len(q.SQL) + len(";"))
+	powerCounter := float64(1)
+	powerMax := math.Pow(10, powerCounter) - 1
+	prevMax := float64(0)
+	for powerMax < toReplace {
+		bytesNeeded += ((powerMax - prevMax) * powerCounter)
+		prevMax = powerMax
+		powerCounter += 1
+		powerMax = math.Pow(10, powerCounter) - 1
+	}
+	bytesNeeded += ((toReplace - prevMax) * powerCounter)
+	output := make([]byte, int(bytesNeeded))
 	buffer := make([]byte, utf8.UTFMax)
 	for pos < len(q.SQL) {
 		r, width = utf8.DecodeRuneInString(q.SQL[pos:])
@@ -60,6 +81,7 @@ func (q *Query) String() string {
 				output[outputPos] = b
 				outputPos += 1
 			}
+			count += 1
 			continue
 		}
 		used := utf8.EncodeRune(buffer[0:], r)
@@ -68,35 +90,63 @@ func (q *Query) String() string {
 			outputPos += 1
 		}
 	}
-	return string(output)+";"
+	for i := 0; i < len(terminator); i++ {
+		output[len(output)-(len(terminator)-i)] = terminator[i]
+	}
+	return string(output)
+}
+
+func (q *Query) FlushExpressions(join string) {
+	q.SQL = strings.TrimSpace(q.SQL) + " "
+	q.SQL += strings.TrimSpace(strings.Join(q.Expressions, join))
+	q.Expressions = q.Expressions[0:0]
+}
+
+func (q *Query) IncludeIfNotNil(key string, value interface{}) {
+	val := reflect.ValueOf(value)
+	kind := val.Kind()
+	if kind != reflect.Map && kind != reflect.Ptr && kind != reflect.Slice {
+		return
+	}
+	q.Expressions = append(q.Expressions, key)
+	q.Args = append(q.Args, value)
+}
+
+func (q *Query) IncludeIfNotEmpty(key string, value interface{}) {
+	if reflect.DeepEqual(value, reflect.Zero(reflect.TypeOf(value)).Interface()) {
+		return
+	}
+	q.Expressions = append(q.Expressions, key)
+	q.Args = append(q.Args, value)
+}
+
+func (q *Query) Include(key string, values ...interface{}) {
+	q.Expressions = append(q.Expressions, key)
+	q.Args = append(q.Args, values...)
 }
 
 func (q *Query) IncludeWhere() {
-	q.SQL = strings.TrimSpace(q.SQL)
-	q.SQL += " "
 	if q.IncludesWhere {
 		return
 	}
-	q.SQL += "WHERE "
+	q.Expressions = append(q.Expressions, "WHERE")
+	q.FlushExpressions(" ")
 	q.IncludesWhere = true
 }
 
-func (q *Query) IncludeOrder() {
-	q.SQL = strings.TrimSpace(q.SQL)
-	q.SQL += " "
+func (q *Query) IncludeOrder(orderClause string) {
 	if q.IncludesOrder {
 		return
 	}
-	q.SQL += "ORDER BY "
+	q.Expressions = append(q.Expressions, "ORDER BY ")
 	q.IncludesOrder = true
 }
 
 func (q *Query) IncludeLimit(limit int) {
-	q.SQL = strings.TrimSpace(q.SQL)
 	if q.IncludesLimit {
 		return
 	}
-	q.SQL += " LIMIT $1"
+	q.Expressions = append(q.Expressions, " LIMIT ?")
 	q.Args = append(q.Args, limit)
 	q.IncludesLimit = true
 }
