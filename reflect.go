@@ -72,10 +72,24 @@ func getFields(s sqlTableNamer, full bool) (fields []string, values []interface{
 		v = v.Elem()
 	}
 	for i := 0; i < t.NumField(); i++ {
+		if t.Field(i).PkgPath != "" {
+			// skip unexported fields
+			continue
+		}
 		field := getFieldColumn(t.Field(i))
 		if full {
 			field = "`" + s.GetSQLTableName() + "`." + field
 		}
+		// strip empty bytes from field name, for comparison purposes
+		fieldBytes := make([]byte, 0)
+		for _, b := range []byte(field) {
+			if b == 0 {
+				continue
+			}
+			fieldBytes = append(fieldBytes, b)
+		}
+		field = string(fieldBytes)
+
 		// Get the value of the field
 		value := v.Field(i).Interface()
 		fields = append(fields, field)
