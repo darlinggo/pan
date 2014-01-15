@@ -102,51 +102,57 @@ func (q *Query) FlushExpressions(join string) {
 	q.Expressions = q.Expressions[0:0]
 }
 
-func (q *Query) IncludeIfNotNil(key string, value interface{}) {
+func (q *Query) IncludeIfNotNil(key string, value interface{}) *Query {
 	val := reflect.ValueOf(value)
 	kind := val.Kind()
 	if kind != reflect.Map && kind != reflect.Ptr && kind != reflect.Slice {
-		return
+		return q
 	}
 	q.Expressions = append(q.Expressions, key)
 	q.Args = append(q.Args, value)
+	return q
 }
 
-func (q *Query) IncludeIfNotEmpty(key string, value interface{}) {
+func (q *Query) IncludeIfNotEmpty(key string, value interface{}) *Query {
 	if reflect.DeepEqual(value, reflect.Zero(reflect.TypeOf(value)).Interface()) {
-		return
+		return q
 	}
 	q.Expressions = append(q.Expressions, key)
 	q.Args = append(q.Args, value)
+	return q
 }
 
-func (q *Query) Include(key string, values ...interface{}) {
+func (q *Query) Include(key string, values ...interface{}) *Query {
 	q.Expressions = append(q.Expressions, key)
 	q.Args = append(q.Args, values...)
+	return q
 }
 
-func (q *Query) IncludeWhere() {
+func (q *Query) IncludeWhere() *Query {
 	if q.IncludesWhere {
-		return
+		return q
 	}
 	q.Expressions = append(q.Expressions, "WHERE")
 	q.FlushExpressions(" ")
 	q.IncludesWhere = true
+	return q
 }
 
-func (q *Query) IncludeOrder(orderClause string) {
+func (q *Query) IncludeOrder(orderClause string) *Query {
 	if q.IncludesOrder {
-		return
+		return q
 	}
 	q.Expressions = append(q.Expressions, "ORDER BY ")
 	q.IncludesOrder = true
+	return q
 }
 
-func (q *Query) IncludeLimit(limit int) {
+func (q *Query) IncludeLimit(limit int) *Query {
 	if q.IncludesLimit {
-		return
+		return q
 	}
 	q.Expressions = append(q.Expressions, " LIMIT ?")
 	q.Args = append(q.Args, limit)
 	q.IncludesLimit = true
+	return q
 }
