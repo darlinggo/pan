@@ -96,7 +96,7 @@ func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{}) {
 // drawn from tags or inferred from the property name (which will be lower-cased with underscores,
 // e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
 // those properties. Fields will be surrounded in \` marks and prefixed with their table name, as
-// determined by the passed type's GetSQLTableName. The format will be `table_name`.`field_name`.
+// determined by the passed type's GetSQLTableName. The format will be \`table_name\`.\`field_name\`.
 func GetAbsoluteFields(s sqlTableNamer) (fields []string, values []interface{}) {
 	return getFields(s, true)
 }
