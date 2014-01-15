@@ -1,4 +1,4 @@
 pan
 ===
 
-PostgreSQL generator written in Go.
+SQL generator written in Go.
