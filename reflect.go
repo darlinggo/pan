@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-const TAG_NAME = "sql_column"
+const TAG_NAME = "sql_column" // The tag that will be read
 
 func validTag(s string) bool {
 	if s == "" {
@@ -84,14 +84,26 @@ func getFields(s sqlTableNamer, full bool) (fields []string, values []interface{
 	return
 }
 
+// GetQuotedFields returns a slice of the fields in the passed type, with their names
+// drawn from tags or inferred from the property name (which will be lower-cased with underscores,
+// e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
+// those properties. Fields will be surrounding in ` marks.
 func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{}) {
 	return getFields(s, false)
 }
 
+// GetAbsoluteFields returns a slice of the fields in the passed type, with their names
+// drawn from tags or inferred from the property name (which will be lower-cased with underscores,
+// e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
+// those properties. Fields will be surrounded in ` marks and prefixed with their table name, as
+// determined by the passed type's GetSQLTableName. The format will be `table_name`.`field_name`.
 func GetAbsoluteFields(s sqlTableNamer) (fields []string, values []interface{}) {
 	return getFields(s, true)
 }
 
+// GetColumn returns the field name associated with the specified property in the passed value.
+// Property must correspond exactly to the name of the property in the type, or this function will
+// panic.
 func GetColumn(s interface{}, property string) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
@@ -109,10 +121,15 @@ type sqlTableNamer interface {
 	GetSQLTableName() string
 }
 
+// GetTableName returns the table name for any type that implements the `GetSQLTableName() string`
+// method signature. The returned string will be used as the name of the table to store the data
+// for all instances of the type.
 func GetTableName(t sqlTableNamer) string {
 	return t.GetSQLTableName()
 }
 
+// VariableList returns a list of `num` variable placeholders for use in SQL queries involving slices
+// and arrays.
 func VariableList(num int) string {
 	placeholders := make([]string, num)
 	for pos := 0; pos < num; pos++ {
@@ -121,6 +138,8 @@ func VariableList(num int) string {
 	return strings.Join(placeholders, ",")
 }
 
+// QueryList joins the passed fields into a string that can be used when selecting the fields to return
+// or specifying fields in an update or insert.
 func QueryList(fields []string) string {
 	return strings.Join(fields, ", ")
 }
