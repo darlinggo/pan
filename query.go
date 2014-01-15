@@ -109,10 +109,11 @@ func (q *Query) String() string {
 // FlushExpressions joins the Query's Expressions with the join string, then concatenates them
 // to the Query's SQL. It then resets the Query's Expressions. This permits Expressions to be joined
 // by different strings within a single Query.
-func (q *Query) FlushExpressions(join string) {
+func (q *Query) FlushExpressions(join string) *Query {
 	q.SQL = strings.TrimSpace(q.SQL) + " "
 	q.SQL += strings.TrimSpace(strings.Join(q.Expressions, join))
 	q.Expressions = q.Expressions[0:0]
+	return q
 }
 
 // IncludeIfNotNil adds the supplied key (which should be an expression) to the Query's Expressions if
