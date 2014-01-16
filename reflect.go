@@ -42,7 +42,7 @@ func toSnake(s string) string {
 		}
 
 		n := utf8.EncodeRune(buf, c)
-		snake += string(buf)
+		snake += string(buf[0:n])
 		// clear the buffer
 		for i := 0; i < n; i++ {
 			buf[i] = 0
@@ -61,7 +61,7 @@ func getFieldColumn(f reflect.StructField) string {
 	return field
 }
 
-func getFields(s sqlTableNamer, full bool) (fields []string, values []interface{}) {
+func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []interface{}) {
 	t := reflect.TypeOf(s)
 	v := reflect.ValueOf(s)
 	k := t.Kind()
@@ -80,15 +80,6 @@ func getFields(s sqlTableNamer, full bool) (fields []string, values []interface{
 		if full {
 			field = "`" + s.GetSQLTableName() + "`." + field
 		}
-		// strip empty bytes from field name, for comparison purposes
-		fieldBytes := make([]byte, 0)
-		for _, b := range []byte(field) {
-			if b == 0 {
-				continue
-			}
-			fieldBytes = append(fieldBytes, b)
-		}
-		field = string(fieldBytes)
 
 		// Get the value of the field
 		value := v.Field(i).Interface()
@@ -102,7 +93,7 @@ func getFields(s sqlTableNamer, full bool) (fields []string, values []interface{
 // drawn from tags or inferred from the property name (which will be lower-cased with underscores,
 // e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
 // those properties. Fields will be surrounding in ` marks.
-func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{}) {
+func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
 	return getFields(s, false)
 }
 
@@ -111,7 +102,7 @@ func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{}) {
 // e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
 // those properties. Fields will be surrounded in \` marks and prefixed with their table name, as
 // determined by the passed type's GetSQLTableName. The format will be \`table_name\`.\`field_name\`.
-func GetAbsoluteFields(s sqlTableNamer) (fields []string, values []interface{}) {
+func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
 	return getFields(s, true)
 }
 
