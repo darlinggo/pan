@@ -18,10 +18,10 @@ type Query struct {
 	IncludesLimit bool
 }
 
-// New creates a new Query object.
-func New() *Query {
+// New creates a new Query object. The passed string is used to prefix the query.
+func New(query string) *Query {
 	return &Query{
-		SQL:  "",
+		SQL:  query,
 		Args: []interface{}{},
 	}
 }
@@ -123,6 +123,9 @@ func (q *Query) IncludeIfNotNil(key string, value interface{}) *Query {
 	val := reflect.ValueOf(value)
 	kind := val.Kind()
 	if kind != reflect.Map && kind != reflect.Ptr && kind != reflect.Slice {
+		return q
+	}
+	if val.IsNil() {
 		return q
 	}
 	q.Expressions = append(q.Expressions, key)
