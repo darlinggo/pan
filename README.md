@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/DramaFever/pan.png)](https://travis-ci.org/DramaFever/pan)
 
 # pan
     import "github.com/DramaFever/pan"
@@ -100,7 +101,7 @@ New creates a new Query object.
 
 ### func (\*Query) FlushExpressions
 ``` go
-func (q *Query) FlushExpressions(join string)
+func (q *Query) FlushExpressions(join string) *Query
 ```
 FlushExpressions joins the Query's Expressions with the join string, then concatenates them
 to the Query's SQL. It then resets the Query's Expressions. This permits Expressions to be joined
