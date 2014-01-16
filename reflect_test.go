@@ -5,9 +5,9 @@ import (
 )
 
 type testType struct {
-	myInt int
-	MyTaggedInt int `sql_column:"tagged_int"`
-	MyString string
+	myInt          int
+	MyTaggedInt    int `sql_column:"tagged_int"`
+	MyString       string
 	myTaggedString string `sql_column:"tagged_string"`
 }
 
@@ -17,9 +17,9 @@ func (t testType) GetSQLTableName() string {
 
 func TestReflectedProperties(t *testing.T) {
 	foo := testType{
-		myInt: 1,
-		MyTaggedInt: 2,
-		MyString: "hello",
+		myInt:          1,
+		MyTaggedInt:    2,
+		MyString:       "hello",
 		myTaggedString: "world",
 	}
 	fields, values := GetAbsoluteFields(foo)

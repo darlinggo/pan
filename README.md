@@ -15,7 +15,7 @@ const TAG_NAME = "sql_column" // The tag that will be read
 
 ## func GetAbsoluteFields
 ``` go
-func GetAbsoluteFields(s sqlTableNamer) (fields []string, values []interface{})
+func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{})
 ```
 GetAbsoluteFields returns a slice of the fields in the passed type, with their names
 drawn from tags or inferred from the property name (which will be lower-cased with underscores,
@@ -35,7 +35,7 @@ panic.
 
 ## func GetQuotedFields
 ``` go
-func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{})
+func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{})
 ```
 GetQuotedFields returns a slice of the fields in the passed type, with their names
 drawn from tags or inferred from the property name (which will be lower-cased with underscores,
@@ -92,9 +92,9 @@ Query contains the data needed to perform a single SQL query.
 
 ### func New
 ``` go
-func New() *Query
+func New(query string) *Query
 ```
-New creates a new Query object.
+New creates a new Query object. The passed string is used to prefix the query.
 
 
 
