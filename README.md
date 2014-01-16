@@ -5,6 +5,66 @@
 
 
 
+## Constants
+``` go
+const TAG_NAME = "sql_column" // The tag that will be read
+
+```
+
+
+## func GetAbsoluteFields
+``` go
+func GetAbsoluteFields(s sqlTableNamer) (fields []string, values []interface{})
+```
+GetAbsoluteFields returns a slice of the fields in the passed type, with their names
+drawn from tags or inferred from the property name (which will be lower-cased with underscores,
+e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
+those properties. Fields will be surrounded in \` marks and prefixed with their table name, as
+determined by the passed type's GetSQLTableName. The format will be \`table_name\`.\`field_name\`.
+
+
+## func GetColumn
+``` go
+func GetColumn(s interface{}, property string) string
+```
+GetColumn returns the field name associated with the specified property in the passed value.
+Property must correspond exactly to the name of the property in the type, or this function will
+panic.
+
+
+## func GetQuotedFields
+``` go
+func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{})
+```
+GetQuotedFields returns a slice of the fields in the passed type, with their names
+drawn from tags or inferred from the property name (which will be lower-cased with underscores,
+e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
+those properties. Fields will be surrounding in ` marks.
+
+
+## func GetTableName
+``` go
+func GetTableName(t sqlTableNamer) string
+```
+GetTableName returns the table name for any type that implements the `GetSQLTableName() string`
+method signature. The returned string will be used as the name of the table to store the data
+for all instances of the type.
+
+
+## func QueryList
+``` go
+func QueryList(fields []string) string
+```
+QueryList joins the passed fields into a string that can be used when selecting the fields to return
+or specifying fields in an update or insert.
+
+
+## func VariableList
+``` go
+func VariableList(num int) string
+```
+VariableList returns a list of `num` variable placeholders for use in SQL queries involving slices
+and arrays.
 
 
 
