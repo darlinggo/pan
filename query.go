@@ -122,8 +122,11 @@ func (q *Query) FlushExpressions(join string) *Query {
 func (q *Query) IncludeIfNotNil(key string, value interface{}) *Query {
 	val := reflect.ValueOf(value)
 	kind := val.Kind()
-	if kind != reflect.Map && kind != reflect.Ptr && kind != reflect.Slice {
+	if kind == reflect.Chan || kind == reflect.Func {
 		return q
+	}
+	if kind != reflect.Map && kind != reflect.Slice && kind != reflect.Interface && kind != reflect.Ptr {
+		return q.IncludeIfNotEmpty(key, value)
 	}
 	if val.IsNil() {
 		return q
@@ -172,7 +175,7 @@ func (q *Query) IncludeOrder(orderClause string) *Query {
 	if q.IncludesOrder {
 		return q
 	}
-	q.Expressions = append(q.Expressions, "ORDER BY ")
+	q.Expressions = append(q.Expressions, "ORDER BY "+orderClause)
 	q.IncludesOrder = true
 	return q
 }
@@ -184,7 +187,7 @@ func (q *Query) IncludeLimit(limit int) *Query {
 	if q.IncludesLimit {
 		return q
 	}
-	q.Expressions = append(q.Expressions, " LIMIT ?")
+	q.Expressions = append(q.Expressions, "LIMIT ?")
 	q.Args = append(q.Args, limit)
 	q.IncludesLimit = true
 	return q
