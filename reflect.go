@@ -14,7 +14,7 @@ func validTag(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !unicode.IsLetter(c) && !unicode.IsDigit(c) {
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && c != rune([]byte("_")[0]) && c != rune([]byte(".")[0]) && c != rune([]byte("-")[0]) {
 			return false
 		}
 	}
@@ -54,7 +54,7 @@ func toSnake(s string) string {
 func getFieldColumn(f reflect.StructField) string {
 	// Get the SQL column name, from the tag or infer it
 	field := f.Tag.Get(TAG_NAME)
-	if field == "" {
+	if field == "" || !validTag(field) {
 		field = toSnake(f.Name)
 	}
 	field = "`" + field + "`"
@@ -65,11 +65,13 @@ func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []inter
 	t := reflect.TypeOf(s)
 	v := reflect.ValueOf(s)
 	k := t.Kind()
-	if k != reflect.Interface && k != reflect.Ptr && k != reflect.Struct {
-		return
-	}
-	if k == reflect.Ptr {
+	for k == reflect.Interface || k == reflect.Ptr {
 		v = v.Elem()
+		t = v.Type()
+		k = t.Kind()
+	}
+	if k != reflect.Struct {
+		return
 	}
 	for i := 0; i < t.NumField(); i++ {
 		if t.Field(i).PkgPath != "" {
@@ -112,7 +114,11 @@ func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interfac
 func GetColumn(s interface{}, property string) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
-	if k != reflect.Interface && k != reflect.Ptr && k != reflect.Struct {
+	for k == reflect.Interface || k == reflect.Ptr {
+		t = reflect.ValueOf(s).Elem().Type()
+		k = t.Kind()
+	}
+	if k != reflect.Struct {
 		return ""
 	}
 	field, ok := t.FieldByName(property)
@@ -145,6 +151,10 @@ func VariableList(num int) string {
 
 // QueryList joins the passed fields into a string that can be used when selecting the fields to return
 // or specifying fields in an update or insert.
-func QueryList(fields []string) string {
-	return strings.Join(fields, ", ")
+func QueryList(fields []interface{}) string {
+	strs := make([]string, len(fields))
+	for pos, field := range fields {
+		strs[pos] = field.(string)
+	}
+	return strings.Join(strs, ", ")
 }

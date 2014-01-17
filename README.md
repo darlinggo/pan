@@ -54,7 +54,7 @@ for all instances of the type.
 
 ## func QueryList
 ``` go
-func QueryList(fields []string) string
+func QueryList(fields []interface{}) string
 ```
 QueryList joins the passed fields into a string that can be used when selecting the fields to return
 or specifying fields in an update or insert.
