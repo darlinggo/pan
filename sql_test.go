@@ -27,7 +27,7 @@ func init() {
 	p.Title = ""
 	fields, values = GetAbsoluteFields(p)
 	sqlTable[New("UPDATE "+GetTableName(p)).Include("SET").FlushExpressions(" ").IncludeIfNotEmpty(GetColumn(p, "Title")+" = ?", p.Title).IncludeIfNotNil(GetColumn(p, "Modified")+" = ?", p.Modified).Include(GetColumn(p, "Author")+" = ?", p.Author).FlushExpressions(", ").IncludeWhere().Include("? = ?", GetColumn(p, "ID"), p).Generate(" ")] = "UPDATE test_data SET `modified` = $1, `author_id` = $2 WHERE $3 = $4;"
-	sqlTable[New("SELECT " + QueryList(fields)).Include("FROM ?", GetTableName(p)).IncludeWhere().Include(GetColumn(p, "Created") + " > (SELECT " + GetColumn(p, "Created") + " FROM `" + GetTableName(p) + "` WHERE " + GetColumn(p, "ID") + " = ?)", 123).IncludeWhere().IncludeOrder(GetColumn(p, "Created") + " DESC").IncludeLimit(19).Generate(" ")] = "SELECT `test_data`.`id`, `test_data`.`title`, `test_data`.`author_id`, `test_data`.`body`, `test_data`.`created`, `test_data`.`modified` FROM $1 WHERE `created` > (SELECT `created` FROM `test_data` WHERE `id` = $2) ORDER BY `created` DESC LIMIT $3;"
+	sqlTable[New("SELECT "+QueryList(fields)).Include("FROM ?", GetTableName(p)).IncludeWhere().Include(GetColumn(p, "Created")+" > (SELECT "+GetColumn(p, "Created")+" FROM `"+GetTableName(p)+"` WHERE "+GetColumn(p, "ID")+" = ?)", 123).IncludeWhere().IncludeOrder(GetColumn(p, "Created")+" DESC").IncludeLimit(19).Generate(" ")] = "SELECT `test_data`.`id`, `test_data`.`title`, `test_data`.`author_id`, `test_data`.`body`, `test_data`.`created`, `test_data`.`modified` FROM $1 WHERE `created` > (SELECT `created` FROM `test_data` WHERE `id` = $2) ORDER BY `created` DESC LIMIT $3;"
 }
 
 var sqlTable = map[string]string{
