@@ -8,7 +8,7 @@ import (
 type testPost struct {
 	ID       int
 	Title    string
-	Author   int `sql_column:"author_id'`
+	Author   int `sql_column:"author_id"`
 	Body     string
 	Created  time.Time
 	Modified *time.Time
@@ -22,7 +22,12 @@ func init() {
 	p := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
 	fields, values := GetQuotedFields(p)
 	sqlTable[New("INSERT").Include("INTO ?", GetTableName(p)).Include("("+VariableList(len(fields))+")", []interface{}(fields)...).Include("VALUES").Include("("+VariableList(len(values))+")", values...).Generate(" ")] = "INSERT INTO $1 ($2,$3,$4,$5,$6,$7) VALUES ($8,$9,$10,$11,$12,$13);"
-	sqlTable[New("UPDATE "+GetTableName(p)).Include("SET").FlushExpressions(" ").IncludeIfNotEmpty(GetColumn(p, "Title")+" = ?", p.Title).IncludeIfNotNil(GetColumn(p, "Modified")+" = ?", p.Modified).Include(GetColumn(p, "Author")+" = ?", p.Author).FlushExpressions(", ").IncludeWhere().Include("? = ?", GetColumn(p, "ID"), p).Generate(" ")] = "UPDATE test_data SET `title` = $1, `author` = $2 WHERE $3 = $4;"
+	sqlTable[New("UPDATE "+GetTableName(p)).Include("SET").FlushExpressions(" ").IncludeIfNotEmpty(GetColumn(p, "Title")+" = ?", p.Title).IncludeIfNotNil(GetColumn(p, "Modified")+" = ?", p.Modified).Include(GetColumn(p, "Author")+" = ?", p.Author).FlushExpressions(", ").IncludeWhere().Include("? = ?", GetColumn(p, "ID"), p).Generate(" ")] = "UPDATE test_data SET `title` = $1, `author_id` = $2 WHERE $3 = $4;"
+	p.Modified = &p.Created
+	p.Title = ""
+	fields, values = GetAbsoluteFields(p)
+	sqlTable[New("UPDATE "+GetTableName(p)).Include("SET").FlushExpressions(" ").IncludeIfNotEmpty(GetColumn(p, "Title")+" = ?", p.Title).IncludeIfNotNil(GetColumn(p, "Modified")+" = ?", p.Modified).Include(GetColumn(p, "Author")+" = ?", p.Author).FlushExpressions(", ").IncludeWhere().Include("? = ?", GetColumn(p, "ID"), p).Generate(" ")] = "UPDATE test_data SET `modified` = $1, `author_id` = $2 WHERE $3 = $4;"
+	sqlTable[New("SELECT " + QueryList(fields)).Include("FROM ?", GetTableName(p)).IncludeWhere().Include(GetColumn(p, "Created") + " > (SELECT " + GetColumn(p, "Created") + " FROM `" + GetTableName(p) + "` WHERE " + GetColumn(p, "ID") + " = ?)", 123).IncludeWhere().IncludeOrder(GetColumn(p, "Created") + " DESC").IncludeLimit(19).Generate(" ")] = "SELECT `test_data`.`id`, `test_data`.`title`, `test_data`.`author_id`, `test_data`.`body`, `test_data`.`created`, `test_data`.`modified` FROM $1 WHERE `created` > (SELECT `created` FROM `test_data` WHERE `id` = $2) ORDER BY `created` DESC LIMIT $3;"
 }
 
 var sqlTable = map[string]string{
@@ -35,7 +40,7 @@ func TestSQLTable(t *testing.T) {
 			if output == "" {
 				t.Errorf("Expected %s, but there was an argument count error.", expectation)
 			} else {
-				t.Errorf("Expected '%s', got '%s'", expectation, output)
+				t.Errorf("Expected '%s' got '%s'", expectation, output)
 			}
 		}
 	}

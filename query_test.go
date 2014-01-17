@@ -92,6 +92,67 @@ func TestQueriesFromTable(t *testing.T) {
 	}
 }
 
+func TestWrongNumberArgsError(t *testing.T) {
+	q := New("?")
+	q.Args = append(q.Args, 1, 2, 3)
+	err := q.checkCounts()
+	if err == nil {
+		t.Errorf("Expected error.")
+	}
+	if e, ok := err.(WrongNumberArgsError); !ok {
+		t.Errorf("Error was not a WrongNumberArgsError.")
+	} else {
+		if e.NumExpected != 1 {
+			t.Errorf("Expected %d expectations, got %d", 1, e.NumExpected)
+		}
+		if e.NumFound != 3 {
+			t.Errorf("Expected %d args found, got %d", 3, e.NumFound)
+		}
+	}
+	if err.Error() != "Expected 1 arguments, got 3." {
+		t.Errorf("Error message was expected to be `%s`, was `%s` instead.", "Expected 1 arguments, got 3.", err.Error())
+	}
+}
+
+func TestIncludeIfNotNil(t *testing.T) {
+	q := New("")
+	q.IncludeIfNotNil("hello ?", "world")
+	if q.Generate("") != " hello $1;" {
+		t.Errorf("Expected `%s`, got `%s`", " hello $1;", q.Generate(""))
+	}
+
+	var val *testType
+	q = New("")
+	q.IncludeIfNotNil("hello ?", val)
+	if q.Generate("") != ";" {
+		t.Errorf("Expected `%s`, got `%s`", ";", q.Generate(""))
+	}
+
+	q = New("")
+	q.IncludeIfNotNil("hello ?", New)
+	if q.Generate("") != ";" {
+		t.Errorf("Expected `%s`, got `%s`", ";", q.Generate(""))
+	}
+}
+
+func TestRepeatedOrder(t *testing.T) {
+	q := New("SELECT * FROM test_data")
+	q.IncludeOrder("id DESC")
+	q.IncludeOrder("date DESC")
+	if q.Generate(" ") != "SELECT * FROM test_data ORDER BY id DESC;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data ORDER BY id DESC;", q.Generate(" "))
+	}
+}
+
+func TestRepeatedLimit(t *testing.T) {
+	q := New("SELECT * FROM test_data")
+	q.IncludeLimit(10)
+	q.IncludeLimit(5)
+	if q.Generate(" ") != "SELECT * FROM test_data LIMIT $1;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data LIMIT $1;", q.Generate(" "))
+	}
+}
+
 func BenchmarkQueriesFromTable(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
