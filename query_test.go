@@ -16,6 +16,7 @@ var queryTests = []queryTest{
 		Query: &Query{
 			SQL:  "This query expects ? one arg",
 			Args: []interface{}{0},
+			Engine: POSTGRES,
 		},
 	},
 	queryTest{
@@ -23,6 +24,7 @@ var queryTests = []queryTest{
 		Query: &Query{
 			SQL:  "This query expects ? one arg but won't get it;",
 			Args: []interface{}{},
+			Engine: POSTGRES,
 		},
 	},
 	queryTest{
@@ -30,6 +32,7 @@ var queryTests = []queryTest{
 		Query: &Query{
 			SQL:  "This query expects no arguments but will get one;",
 			Args: []interface{}{0},
+			Engine: POSTGRES,
 		},
 	},
 	queryTest{
@@ -37,6 +40,7 @@ var queryTests = []queryTest{
 		Query: &Query{
 			SQL:  "This query expects ? two args ? but will get one;",
 			Args: []interface{}{0},
+			Engine: POSTGRES,
 		},
 	},
 	queryTest{
@@ -44,6 +48,7 @@ var queryTests = []queryTest{
 		Query: &Query{
 			SQL:  "This query expects ? ? two args but will get three;",
 			Args: []interface{}{0, 1, 2},
+			Engine: POSTGRES,
 		},
 	},
 	queryTest{
@@ -51,6 +56,7 @@ var queryTests = []queryTest{
 		Query: &Query{
 			SQL:  "Unicode test 世 ?",
 			Args: []interface{}{0},
+			Engine: POSTGRES,
 		},
 	},
 	queryTest{
@@ -58,6 +64,7 @@ var queryTests = []queryTest{
 		Query: &Query{
 			SQL:  "Unicode boundary test ? " + string(rune(0x80)),
 			Args: []interface{}{0},
+			Engine: POSTGRES,
 		},
 	},
 }
@@ -76,6 +83,7 @@ func init() {
 				Query: &Query{
 					SQL:  SQL,
 					Args: args,
+					Engine: POSTGRES,
 				},
 			})
 		}
@@ -93,7 +101,7 @@ func TestQueriesFromTable(t *testing.T) {
 }
 
 func TestWrongNumberArgsError(t *testing.T) {
-	q := New("?")
+	q := New(POSTGRES, "?")
 	q.Args = append(q.Args, 1, 2, 3)
 	err := q.checkCounts()
 	if err == nil {
@@ -115,20 +123,20 @@ func TestWrongNumberArgsError(t *testing.T) {
 }
 
 func TestIncludeIfNotNil(t *testing.T) {
-	q := New("")
+	q := New(POSTGRES, "")
 	q.IncludeIfNotNil("hello ?", "world")
 	if q.Generate("") != " hello $1;" {
 		t.Errorf("Expected `%s`, got `%s`", " hello $1;", q.Generate(""))
 	}
 
 	var val *testType
-	q = New("")
+	q = New(POSTGRES, "")
 	q.IncludeIfNotNil("hello ?", val)
 	if q.Generate("") != ";" {
 		t.Errorf("Expected `%s`, got `%s`", ";", q.Generate(""))
 	}
 
-	q = New("")
+	q = New(POSTGRES, "")
 	q.IncludeIfNotNil("hello ?", New)
 	if q.Generate("") != ";" {
 		t.Errorf("Expected `%s`, got `%s`", ";", q.Generate(""))
@@ -136,7 +144,7 @@ func TestIncludeIfNotNil(t *testing.T) {
 }
 
 func TestRepeatedOrder(t *testing.T) {
-	q := New("SELECT * FROM test_data")
+	q := New(POSTGRES, "SELECT * FROM test_data")
 	q.IncludeOrder("id DESC")
 	q.IncludeOrder("date DESC")
 	if q.Generate(" ") != "SELECT * FROM test_data ORDER BY id DESC;" {
@@ -145,7 +153,7 @@ func TestRepeatedOrder(t *testing.T) {
 }
 
 func TestRepeatedLimit(t *testing.T) {
-	q := New("SELECT * FROM test_data")
+	q := New(POSTGRES, "SELECT * FROM test_data")
 	q.IncludeLimit(10)
 	q.IncludeLimit(5)
 	if q.Generate(" ") != "SELECT * FROM test_data LIMIT $1;" {
