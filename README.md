@@ -8,6 +8,12 @@
 
 ## Constants
 ``` go
+const (
+    MYSQL dbengine = iota
+    POSTGRES
+)
+```
+``` go
 const TAG_NAME = "sql_column" // The tag that will be read
 
 ```
@@ -78,6 +84,7 @@ type Query struct {
     IncludesWhere bool
     IncludesOrder bool
     IncludesLimit bool
+    Engine        dbengine
 }
 ```
 Query contains the data needed to perform a single SQL query.
@@ -92,9 +99,9 @@ Query contains the data needed to perform a single SQL query.
 
 ### func New
 ``` go
-func New(query string) *Query
+func New(engine dbengine, query string) *Query
 ```
-New creates a new Query object. The passed string is used to prefix the query.
+New creates a new Query object. The passed engine is used to format variables. The passed string is used to prefix the query.
 
 
 
