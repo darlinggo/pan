@@ -14,56 +14,56 @@ var queryTests = []queryTest{
 	queryTest{
 		ExpectedResult: "This query expects $1 one arg;",
 		Query: &Query{
-			SQL:  "This query expects ? one arg",
-			Args: []interface{}{0},
+			SQL:    "This query expects ? one arg",
+			Args:   []interface{}{0},
 			Engine: POSTGRES,
 		},
 	},
 	queryTest{
 		ExpectedResult: "",
 		Query: &Query{
-			SQL:  "This query expects ? one arg but won't get it;",
-			Args: []interface{}{},
+			SQL:    "This query expects ? one arg but won't get it;",
+			Args:   []interface{}{},
 			Engine: POSTGRES,
 		},
 	},
 	queryTest{
 		ExpectedResult: "",
 		Query: &Query{
-			SQL:  "This query expects no arguments but will get one;",
-			Args: []interface{}{0},
+			SQL:    "This query expects no arguments but will get one;",
+			Args:   []interface{}{0},
 			Engine: POSTGRES,
 		},
 	},
 	queryTest{
 		ExpectedResult: "",
 		Query: &Query{
-			SQL:  "This query expects ? two args ? but will get one;",
-			Args: []interface{}{0},
+			SQL:    "This query expects ? two args ? but will get one;",
+			Args:   []interface{}{0},
 			Engine: POSTGRES,
 		},
 	},
 	queryTest{
 		ExpectedResult: "",
 		Query: &Query{
-			SQL:  "This query expects ? ? two args but will get three;",
-			Args: []interface{}{0, 1, 2},
+			SQL:    "This query expects ? ? two args but will get three;",
+			Args:   []interface{}{0, 1, 2},
 			Engine: POSTGRES,
 		},
 	},
 	queryTest{
 		ExpectedResult: "Unicode test 世 $1;",
 		Query: &Query{
-			SQL:  "Unicode test 世 ?",
-			Args: []interface{}{0},
+			SQL:    "Unicode test 世 ?",
+			Args:   []interface{}{0},
 			Engine: POSTGRES,
 		},
 	},
 	queryTest{
 		ExpectedResult: "Unicode boundary test $1 " + string(rune(0x80)) + ";",
 		Query: &Query{
-			SQL:  "Unicode boundary test ? " + string(rune(0x80)),
-			Args: []interface{}{0},
+			SQL:    "Unicode boundary test ? " + string(rune(0x80)),
+			Args:   []interface{}{0},
 			Engine: POSTGRES,
 		},
 	},
@@ -81,8 +81,8 @@ func init() {
 			queryTests = append(queryTests, queryTest{
 				ExpectedResult: expected + ";",
 				Query: &Query{
-					SQL:  SQL,
-					Args: args,
+					SQL:    SQL,
+					Args:   args,
 					Engine: POSTGRES,
 				},
 			})
