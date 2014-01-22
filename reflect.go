@@ -39,6 +39,7 @@ func toSnake(s string) string {
 			if prevWasLower {
 				snake += "_"
 			}
+			prevWasLower = false
 		}
 
 		n := utf8.EncodeRune(buf, c)
@@ -54,6 +55,9 @@ func toSnake(s string) string {
 func getFieldColumn(f reflect.StructField) string {
 	// Get the SQL column name, from the tag or infer it
 	field := f.Tag.Get(TAG_NAME)
+	if field == "-" {
+		return ""
+	}
 	if field == "" || !validTag(field) {
 		field = toSnake(f.Name)
 	}
@@ -79,6 +83,9 @@ func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []inter
 			continue
 		}
 		field := getFieldColumn(t.Field(i))
+		if field == "" {
+			continue
+		}
 		if full {
 			field = "`" + s.GetSQLTableName() + "`." + field
 		}
