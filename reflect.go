@@ -14,7 +14,7 @@ func validTag(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !unicode.IsLetter(c) && !unicode.IsDigit(c) {
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && c != rune([]byte("_")[0]) && c != rune([]byte(".")[0]) && c != rune([]byte("-")[0]) {
 			return false
 		}
 	}
@@ -39,10 +39,11 @@ func toSnake(s string) string {
 			if prevWasLower {
 				snake += "_"
 			}
+			prevWasLower = false
 		}
 
 		n := utf8.EncodeRune(buf, c)
-		snake += string(buf)
+		snake += string(buf[0:n])
 		// clear the buffer
 		for i := 0; i < n; i++ {
 			buf[i] = 0
@@ -54,28 +55,41 @@ func toSnake(s string) string {
 func getFieldColumn(f reflect.StructField) string {
 	// Get the SQL column name, from the tag or infer it
 	field := f.Tag.Get(TAG_NAME)
-	if field == "" {
+	if field == "-" {
+		return ""
+	}
+	if field == "" || !validTag(field) {
 		field = toSnake(f.Name)
 	}
 	field = "`" + field + "`"
 	return field
 }
 
-func getFields(s sqlTableNamer, full bool) (fields []string, values []interface{}) {
+func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []interface{}) {
 	t := reflect.TypeOf(s)
 	v := reflect.ValueOf(s)
 	k := t.Kind()
-	if k != reflect.Interface && k != reflect.Ptr && k != reflect.Struct {
+	for k == reflect.Interface || k == reflect.Ptr {
+		v = v.Elem()
+		t = v.Type()
+		k = t.Kind()
+	}
+	if k != reflect.Struct {
 		return
 	}
-	if k == reflect.Ptr {
-		v = v.Elem()
-	}
 	for i := 0; i < t.NumField(); i++ {
+		if t.Field(i).PkgPath != "" {
+			// skip unexported fields
+			continue
+		}
 		field := getFieldColumn(t.Field(i))
+		if field == "" {
+			continue
+		}
 		if full {
 			field = "`" + s.GetSQLTableName() + "`." + field
 		}
+
 		// Get the value of the field
 		value := v.Field(i).Interface()
 		fields = append(fields, field)
@@ -88,7 +102,7 @@ func getFields(s sqlTableNamer, full bool) (fields []string, values []interface{
 // drawn from tags or inferred from the property name (which will be lower-cased with underscores,
 // e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
 // those properties. Fields will be surrounding in ` marks.
-func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{}) {
+func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
 	return getFields(s, false)
 }
 
@@ -97,7 +111,7 @@ func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{}) {
 // e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
 // those properties. Fields will be surrounded in \` marks and prefixed with their table name, as
 // determined by the passed type's GetSQLTableName. The format will be \`table_name\`.\`field_name\`.
-func GetAbsoluteFields(s sqlTableNamer) (fields []string, values []interface{}) {
+func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
 	return getFields(s, true)
 }
 
@@ -107,7 +121,11 @@ func GetAbsoluteFields(s sqlTableNamer) (fields []string, values []interface{}) 
 func GetColumn(s interface{}, property string) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
-	if k != reflect.Interface && k != reflect.Ptr && k != reflect.Struct {
+	for k == reflect.Interface || k == reflect.Ptr {
+		t = reflect.ValueOf(s).Elem().Type()
+		k = t.Kind()
+	}
+	if k != reflect.Struct {
 		return ""
 	}
 	field, ok := t.FieldByName(property)
@@ -140,6 +158,10 @@ func VariableList(num int) string {
 
 // QueryList joins the passed fields into a string that can be used when selecting the fields to return
 // or specifying fields in an update or insert.
-func QueryList(fields []string) string {
-	return strings.Join(fields, ", ")
+func QueryList(fields []interface{}) string {
+	strs := make([]string, len(fields))
+	for pos, field := range fields {
+		strs[pos] = field.(string)
+	}
+	return strings.Join(strs, ", ")
 }

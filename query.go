@@ -8,6 +8,13 @@ import (
 	"unicode/utf8"
 )
 
+type dbengine int
+
+const (
+	MYSQL dbengine = iota
+	POSTGRES
+)
+
 // Query contains the data needed to perform a single SQL query.
 type Query struct {
 	SQL           string
@@ -16,13 +23,15 @@ type Query struct {
 	IncludesWhere bool
 	IncludesOrder bool
 	IncludesLimit bool
+	Engine        dbengine
 }
 
-// New creates a new Query object.
-func New() *Query {
+// New creates a new Query object. The passed engine is used to format variables. The passed string is used to prefix the query.
+func New(engine dbengine, query string) *Query {
 	return &Query{
-		SQL:  "",
-		Args: []interface{}{},
+		Engine: engine,
+		SQL:    query,
+		Args:   []interface{}{},
 	}
 }
 
@@ -63,13 +72,29 @@ func (q *Query) String() string {
 	if err := q.checkCounts(); err != nil {
 		return ""
 	}
+	switch q.Engine {
+	case POSTGRES:
+		q.postgresProcess()
+	case MYSQL:
+		q.mysqlProcess()
+	}
+	return q.SQL
+}
+
+func (q *Query) mysqlProcess() {
+	q.SQL = q.SQL + ";"
+}
+
+func (q *Query) postgresProcess() {
 	var pos, width, outputPos int
 	var r rune
 	var count = 1
-	replacementRune, _ := utf8.DecodeRune([]byte("?"))
-	terminator := []byte(";")
-	toReplace := float64(strings.Count(q.SQL, "?"))
-	bytesNeeded := float64(len(q.SQL) + len(";"))
+	replacementString := "?"
+	replacementRune, _ := utf8.DecodeRune([]byte(replacementString))
+	terminatorString := ";"
+	terminatorBytes := []byte(terminatorString)
+	toReplace := float64(strings.Count(q.SQL, replacementString))
+	bytesNeeded := float64(len(q.SQL) + len(replacementString))
 	powerCounter := float64(1)
 	powerMax := math.Pow(10, powerCounter) - 1
 	prevMax := float64(0)
@@ -100,10 +125,10 @@ func (q *Query) String() string {
 			outputPos += 1
 		}
 	}
-	for i := 0; i < len(terminator); i++ {
-		output[len(output)-(len(terminator)-i)] = terminator[i]
+	for i := 0; i < len(terminatorBytes); i++ {
+		output[len(output)-(len(terminatorBytes)-i)] = terminatorBytes[i]
 	}
-	return string(output)
+	q.SQL = string(output)
 }
 
 // FlushExpressions joins the Query's Expressions with the join string, then concatenates them
@@ -122,7 +147,13 @@ func (q *Query) FlushExpressions(join string) *Query {
 func (q *Query) IncludeIfNotNil(key string, value interface{}) *Query {
 	val := reflect.ValueOf(value)
 	kind := val.Kind()
-	if kind != reflect.Map && kind != reflect.Ptr && kind != reflect.Slice {
+	if kind == reflect.Chan || kind == reflect.Func {
+		return q
+	}
+	if kind != reflect.Map && kind != reflect.Slice && kind != reflect.Interface && kind != reflect.Ptr {
+		return q.IncludeIfNotEmpty(key, value)
+	}
+	if val.IsNil() {
 		return q
 	}
 	q.Expressions = append(q.Expressions, key)
@@ -169,7 +200,7 @@ func (q *Query) IncludeOrder(orderClause string) *Query {
 	if q.IncludesOrder {
 		return q
 	}
-	q.Expressions = append(q.Expressions, "ORDER BY ")
+	q.Expressions = append(q.Expressions, "ORDER BY "+orderClause)
 	q.IncludesOrder = true
 	return q
 }
@@ -181,7 +212,7 @@ func (q *Query) IncludeLimit(limit int) *Query {
 	if q.IncludesLimit {
 		return q
 	}
-	q.Expressions = append(q.Expressions, " LIMIT ?")
+	q.Expressions = append(q.Expressions, "LIMIT ?")
 	q.Args = append(q.Args, limit)
 	q.IncludesLimit = true
 	return q

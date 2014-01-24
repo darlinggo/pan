@@ -8,6 +8,12 @@
 
 ## Constants
 ``` go
+const (
+    MYSQL dbengine = iota
+    POSTGRES
+)
+```
+``` go
 const TAG_NAME = "sql_column" // The tag that will be read
 
 ```
@@ -15,7 +21,7 @@ const TAG_NAME = "sql_column" // The tag that will be read
 
 ## func GetAbsoluteFields
 ``` go
-func GetAbsoluteFields(s sqlTableNamer) (fields []string, values []interface{})
+func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{})
 ```
 GetAbsoluteFields returns a slice of the fields in the passed type, with their names
 drawn from tags or inferred from the property name (which will be lower-cased with underscores,
@@ -35,7 +41,7 @@ panic.
 
 ## func GetQuotedFields
 ``` go
-func GetQuotedFields(s sqlTableNamer) (fields []string, values []interface{})
+func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{})
 ```
 GetQuotedFields returns a slice of the fields in the passed type, with their names
 drawn from tags or inferred from the property name (which will be lower-cased with underscores,
@@ -54,7 +60,7 @@ for all instances of the type.
 
 ## func QueryList
 ``` go
-func QueryList(fields []string) string
+func QueryList(fields []interface{}) string
 ```
 QueryList joins the passed fields into a string that can be used when selecting the fields to return
 or specifying fields in an update or insert.
@@ -78,6 +84,7 @@ type Query struct {
     IncludesWhere bool
     IncludesOrder bool
     IncludesLimit bool
+    Engine        dbengine
 }
 ```
 Query contains the data needed to perform a single SQL query.
@@ -92,9 +99,9 @@ Query contains the data needed to perform a single SQL query.
 
 ### func New
 ``` go
-func New() *Query
+func New(engine dbengine, query string) *Query
 ```
-New creates a new Query object.
+New creates a new Query object. The passed engine is used to format variables. The passed string is used to prefix the query.
 
 
 
