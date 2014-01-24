@@ -35,7 +35,7 @@ func init() {
 }
 
 var sqlTable = map[string]string{
-	New(MYSQL, "INSERT").Include("INTO ?", GetTableName(testPost{})).Include("("+VariableList(4)+")", "a", "b", "c", "d").Include("VALUES").Include("("+VariableList(4)+")", 0, 1, 2, 3).Generate(" "): "INSERT INTO ? (?,?,?,?) VALUES (?,?,?,?);",
+	New(MYSQL, "INSERT").Include("INTO ?", GetTableName(testPost{})).Include("("+VariableList(4)+")", "a", "b", "c", "d").Include("VALUES").Include("("+VariableList(4)+")", 0, 1, 2, 3).Generate(" "):    "INSERT INTO ? (?,?,?,?) VALUES (?,?,?,?);",
 	New(POSTGRES, "INSERT").Include("INTO ?", GetTableName(testPost{})).Include("("+VariableList(4)+")", "a", "b", "c", "d").Include("VALUES").Include("("+VariableList(4)+")", 0, 1, 2, 3).Generate(" "): "INSERT INTO $1 ($2,$3,$4,$5) VALUES ($6,$7,$8,$9);",
 }
 

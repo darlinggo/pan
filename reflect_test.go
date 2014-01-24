@@ -9,6 +9,7 @@ type testType struct {
 	MyTaggedInt    int `sql_column:"tagged_int"`
 	MyString       string
 	myTaggedString string `sql_column:"tagged_string"`
+	OmittedColumn  string `sql_column:"-"`
 }
 
 func (t testType) GetSQLTableName() string {
@@ -137,4 +138,13 @@ func TestInvalidColumnTypes(t *testing.T) {
 	}()
 	result = GetColumn(&testType{}, "NotARealProperty")
 	t.Errorf("Expected a panic, got `%s` instead.", result)
+}
+
+func TestOmittedColumn(t *testing.T) {
+	fields, _ := GetQuotedFields(&testType{})
+	for _, field := range fields {
+		if field.(string) == "`omitted_column`" {
+			t.Errorf("omitted_column should not have shown up, but it did.")
+		}
+	}
 }
