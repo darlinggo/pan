@@ -19,6 +19,15 @@ const TAG_NAME = "sql_column" // The tag that will be read
 ```
 
 
+## func GetAbsoluteColumnName
+``` go
+func GetAbsoluteColumnName(s sqlTableNamer, property string) string
+```
+GetAbsoluteColumnName returns the field name associated with the specified property in the passed value.
+Property must correspond exactly to the name of the property in the type, or this function will
+panic.
+
+
 ## func GetAbsoluteFields
 ``` go
 func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{})
@@ -39,6 +48,47 @@ Property must correspond exactly to the name of the property in the type, or thi
 panic.
 
 
+## func GetM2MAbsoluteColumnName
+``` go
+func GetM2MAbsoluteColumnName(t sqlTableNamer, field string, t2 sqlTableNamer) string
+```
+GetM2MAbsoluteColumnName returns the column name for the supplied field in a many-to-many relationship table,
+including the table name. The field belongs to the first sqlTableNamer, the second sqlTableNamer is the other
+table in the many-to-many relationship.
+
+
+## func GetM2MColumnName
+``` go
+func GetM2MColumnName(t sqlTableNamer, field string) string
+```
+GetM2MColumnName returns the column name for the supplied field in a many-to-many relationship table.
+
+
+## func GetM2MFields
+``` go
+func GetM2MFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{})
+```
+GetM2M returns a slice of the columns that should be in a table that maps the many-to-many relationship of
+the types supplied, with their corresponding values. The field parameters specify the primary keys used in
+the relationship table to map to that type.
+
+
+## func GetM2MQuotedColumnName
+``` go
+func GetM2MQuotedColumnName(t sqlTableNamer, field string) string
+```
+GetM2MQuotedColumnName returns the column name for the supplied field in a many-to-many relationship table,
+including the quote marks around the column name.
+
+
+## func GetM2MTableName
+``` go
+func GetM2MTableName(t1, t2 sqlTableNamer) string
+```
+GetM2MTableName returns a consistent table name for a many-to-many relationship between two tables. No
+matter what order the fields are passed in, the resulting table name will always be consistent.
+
+
 ## func GetQuotedFields
 ``` go
 func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{})
@@ -57,6 +107,11 @@ GetTableName returns the table name for any type that implements the `GetSQLTabl
 method signature. The returned string will be used as the name of the table to store the data
 for all instances of the type.
 
+
+## func GetUnquotedColumn
+``` go
+func GetUnquotedColumn(s interface{}, property string) string
+```
 
 ## func QueryList
 ``` go
@@ -164,6 +219,12 @@ The passed int is used as the limit in the resulting query.
 
 
 
+### func (\*Query) IncludeOffset
+``` go
+func (q *Query) IncludeOffset(offset int) *Query
+```
+
+
 ### func (\*Query) IncludeOrder
 ``` go
 func (q *Query) IncludeOrder(orderClause string) *Query
@@ -181,6 +242,12 @@ func (q *Query) IncludeWhere() *Query
 IncludeWhere includes the WHERE clause if the WHERE clause has not already been included in the Query.
 This cannot detect WHERE clauses that are manually added to the Query's SQL; it only tracks IncludeWhere().
 
+
+
+### func (\*Query) InnerJoin
+``` go
+func (q *Query) InnerJoin(table, expression string) *Query
+```
 
 
 ### func (\*Query) String

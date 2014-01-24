@@ -161,6 +161,50 @@ func TestRepeatedLimit(t *testing.T) {
 	}
 }
 
+// I'm worried that setting the SQL property in String() will cause a problem, so let's find out.
+// I was right. Leaving this test here as penance.
+func TestRepeatedString(t *testing.T) {
+	q := New(POSTGRES, "SELECT * FROM test_data")
+	q.IncludeWhere()
+	q.Include("x = ?", 1)
+	q.IncludeLimit(10)
+	q.FlushExpressions(" ")
+	q2 := *q
+	qstr := q.String()
+	if qstr != "SELECT * FROM test_data WHERE x = $1 LIMIT $2;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data WHERE x = $1 LIMIT $2;", qstr)
+	}
+	qstr = q.String()
+	if qstr != "SELECT * FROM test_data WHERE x = $1 LIMIT $2;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data WHERE x = $1 LIMIT $2;", qstr)
+	}
+	q2.Engine = MYSQL
+	q2str := q2.String()
+	if q2str != "SELECT * FROM test_data WHERE x = ? LIMIT ?;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data WHERE x = ? LIMIT ?;", q2str)
+	}
+	q2str = q2.String()
+	if q2str != "SELECT * FROM test_data WHERE x = ? LIMIT ?;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data WHERE x = ? LIMIT ?;", q2str)
+	}
+}
+
+func TestIncludeOffset(t *testing.T) {
+	q := New(POSTGRES, "SELECT * FROM test_data")
+	q.IncludeOffset(10)
+	if q.Generate(" ") != "SELECT * FROM test_data OFFSET $1;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data OFFSET $1;", q.Generate(" "))
+	}
+}
+
+func TestInnerJoin(t *testing.T) {
+	q := New(POSTGRES, "SELECT * FROM test_data")
+	q.InnerJoin("other_table", "`test_data`.`x` = `other_table`.`x`")
+	if q.Generate(" ") != "SELECT * FROM test_data INNER JOIN other_table ON `test_data`.`x` = `other_table`.`x`;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data INNER JOIN other_table ON `test_data`.`x` = `other_table`.`x`;", q.Generate(" "))
+	}
+}
+
 func BenchmarkQueriesFromTable(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()

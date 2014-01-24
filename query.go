@@ -72,20 +72,21 @@ func (q *Query) String() string {
 	if err := q.checkCounts(); err != nil {
 		return ""
 	}
+	var output string
 	switch q.Engine {
 	case POSTGRES:
-		q.postgresProcess()
+		output = q.postgresProcess()
 	case MYSQL:
-		q.mysqlProcess()
+		output = q.mysqlProcess()
 	}
-	return q.SQL
+	return output
 }
 
-func (q *Query) mysqlProcess() {
-	q.SQL = q.SQL + ";"
+func (q *Query) mysqlProcess() string {
+	return q.SQL + ";"
 }
 
-func (q *Query) postgresProcess() {
+func (q *Query) postgresProcess() string {
 	var pos, width, outputPos int
 	var r rune
 	var count = 1
@@ -128,7 +129,7 @@ func (q *Query) postgresProcess() {
 	for i := 0; i < len(terminatorBytes); i++ {
 		output[len(output)-(len(terminatorBytes)-i)] = terminatorBytes[i]
 	}
-	q.SQL = string(output)
+	return string(output)
 }
 
 // FlushExpressions joins the Query's Expressions with the join string, then concatenates them
@@ -215,5 +216,16 @@ func (q *Query) IncludeLimit(limit int) *Query {
 	q.Expressions = append(q.Expressions, "LIMIT ?")
 	q.Args = append(q.Args, limit)
 	q.IncludesLimit = true
+	return q
+}
+
+func (q *Query) IncludeOffset(offset int) *Query {
+	q.Expressions = append(q.Expressions, "OFFSET ?")
+	q.Args = append(q.Args, offset)
+	return q
+}
+
+func (q *Query) InnerJoin(table, expression string) *Query {
+	q.Expressions = append(q.Expressions, "INNER JOIN "+table+" ON "+expression)
 	return q
 }
