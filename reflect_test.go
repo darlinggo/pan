@@ -207,6 +207,7 @@ func TestGetM2MFields(t *testing.T) {
 	columns3, values3 := GetM2MFields(&t1, "MyString", &t2, "ID")
 	columns4, values4 := GetM2MFields(sqlTableNamer(t1), "MyString", sqlTableNamer(t2), "ID")
 	columns5, values5 := GetM2MFields(sqlTableNamer(&t1), "MyString", sqlTableNamer(&t2), "ID")
+	columns6, _ := GetM2MQuotedFields(t1, "MyString", t2, "ID")
 	if columns[0].(string) != "more_tests_id" {
 		t.Errorf("Expected %s, got %s", "more_tests_id", columns[0])
 	}
@@ -266,6 +267,12 @@ func TestGetM2MFields(t *testing.T) {
 	}
 	if values5[1].(string) != "hello" {
 		t.Errorf("Expected %s, got %s", "hello", values5[1].(string))
+	}
+	if columns6[0].(string) != "`more_tests_id`" {
+		t.Errorf("Expected %s, got %s", "`more_tests_id`", columns6[0].(string))
+	}
+	if columns6[1].(string) != "`test_types_my_string`" {
+		t.Errorf("Expected %s, got %s", "`test_types_my_string`", columns6[1].(string))
 	}
 }
 
