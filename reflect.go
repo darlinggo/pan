@@ -213,7 +213,7 @@ func GetM2MQuotedColumnName(t sqlTableNamer, field string) string {
 	return fmt.Sprintf("`%s`", GetM2MColumnName(t, field))
 }
 
-// GetM2M returns a slice of the columns that should be in a table that maps the many-to-many relationship of
+// GetM2MFields returns a slice of the columns that should be in a table that maps the many-to-many relationship of
 // the types supplied, with their corresponding values. The field parameters specify the primary keys used in
 // the relationship table to map to that type.
 func GetM2MFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{}) {
@@ -258,5 +258,14 @@ func GetM2MFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 stri
 	}
 	columns = append(columns, column1, column2)
 	values = append(values, v1.Interface(), v2.Interface())
+	return
+}
+
+// GetM2MQuotedFields wraps the fields returned by GetM2MFields in quotes.
+func GetM2MQuotedFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{}) {
+	columns, values = GetM2MFields(t1, field1, t2, field2)
+	for pos, column := range columns {
+		columns[pos] = "`" + column.(string) + "`"
+	}
 	return
 }

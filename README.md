@@ -68,7 +68,7 @@ GetM2MColumnName returns the column name for the supplied field in a many-to-man
 ``` go
 func GetM2MFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{})
 ```
-GetM2M returns a slice of the columns that should be in a table that maps the many-to-many relationship of
+GetM2MFields returns a slice of the columns that should be in a table that maps the many-to-many relationship of
 the types supplied, with their corresponding values. The field parameters specify the primary keys used in
 the relationship table to map to that type.
 
@@ -79,6 +79,13 @@ func GetM2MQuotedColumnName(t sqlTableNamer, field string) string
 ```
 GetM2MQuotedColumnName returns the column name for the supplied field in a many-to-many relationship table,
 including the quote marks around the column name.
+
+
+## func GetM2MQuotedFields
+``` go
+func GetM2MQuotedFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{})
+```
+GetM2MQuotedFields wraps the fields returned by GetM2MFields in quotes.
 
 
 ## func GetM2MTableName
