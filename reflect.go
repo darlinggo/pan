@@ -1,6 +1,7 @@
 package pan
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"unicode"
@@ -52,7 +53,7 @@ func toSnake(s string) string {
 	return snake
 }
 
-func getFieldColumn(f reflect.StructField) string {
+func getFieldColumn(f reflect.StructField, quote bool) string {
 	// Get the SQL column name, from the tag or infer it
 	field := f.Tag.Get(TAG_NAME)
 	if field == "-" {
@@ -61,7 +62,9 @@ func getFieldColumn(f reflect.StructField) string {
 	if field == "" || !validTag(field) {
 		field = toSnake(f.Name)
 	}
-	field = "`" + field + "`"
+	if quote {
+		field = "`" + field + "`"
+	}
 	return field
 }
 
@@ -82,7 +85,7 @@ func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []inter
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(t.Field(i))
+		field := getFieldColumn(t.Field(i), true)
 		if field == "" {
 			continue
 		}
@@ -119,6 +122,17 @@ func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interfac
 // Property must correspond exactly to the name of the property in the type, or this function will
 // panic.
 func GetColumn(s interface{}, property string) string {
+	return getColumn(s, property, true)
+}
+
+// GetAbsoluteColumnName returns the field name associated with the specified property in the passed value.
+// Property must correspond exactly to the name of the property in the type, or this function will
+// panic.
+func GetAbsoluteColumnName(s sqlTableNamer, property string) string {
+	return fmt.Sprintf("`%s`.%s", GetTableName(s), GetColumn(s, property))
+}
+
+func getColumn(s interface{}, property string, quote bool) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
 	for k == reflect.Interface || k == reflect.Ptr {
@@ -132,7 +146,11 @@ func GetColumn(s interface{}, property string) string {
 	if !ok {
 		panic("Field not found in type: " + property)
 	}
-	return getFieldColumn(field)
+	return getFieldColumn(field, quote)
+}
+
+func GetUnquotedColumn(s interface{}, property string) string {
+	return getColumn(s, property, false)
 }
 
 type sqlTableNamer interface {
@@ -164,4 +182,90 @@ func QueryList(fields []interface{}) string {
 		strs[pos] = field.(string)
 	}
 	return strings.Join(strs, ", ")
+}
+
+// GetM2MTableName returns a consistent table name for a many-to-many relationship between two tables. No
+// matter what order the fields are passed in, the resulting table name will always be consistent.
+func GetM2MTableName(t1, t2 sqlTableNamer) string {
+	name1 := t1.GetSQLTableName()
+	name2 := t2.GetSQLTableName()
+	if name2 < name1 {
+		name1, name2 = name2, name1
+	}
+	return fmt.Sprintf("%s_%s", name1, name2)
+}
+
+// GetM2MAbsoluteColumnName returns the column name for the supplied field in a many-to-many relationship table,
+// including the table name. The field belongs to the first sqlTableNamer, the second sqlTableNamer is the other
+// table in the many-to-many relationship.
+func GetM2MAbsoluteColumnName(t sqlTableNamer, field string, t2 sqlTableNamer) string {
+	return fmt.Sprintf("`%s`.%s", GetM2MTableName(t, t2), GetM2MQuotedColumnName(t, field))
+}
+
+// GetM2MColumnName returns the column name for the supplied field in a many-to-many relationship table.
+func GetM2MColumnName(t sqlTableNamer, field string) string {
+	return fmt.Sprintf("%s_%s", t.GetSQLTableName(), GetUnquotedColumn(t, field))
+}
+
+// GetM2MQuotedColumnName returns the column name for the supplied field in a many-to-many relationship table,
+// including the quote marks around the column name.
+func GetM2MQuotedColumnName(t sqlTableNamer, field string) string {
+	return fmt.Sprintf("`%s`", GetM2MColumnName(t, field))
+}
+
+// GetM2MFields returns a slice of the columns that should be in a table that maps the many-to-many relationship of
+// the types supplied, with their corresponding values. The field parameters specify the primary keys used in
+// the relationship table to map to that type.
+func GetM2MFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{}) {
+	type1 := reflect.TypeOf(t1)
+	type2 := reflect.TypeOf(t2)
+	value1 := reflect.ValueOf(t1)
+	value2 := reflect.ValueOf(t2)
+	kind1 := value1.Kind()
+	kind2 := value2.Kind()
+	for kind1 == reflect.Interface || kind1 == reflect.Ptr {
+		value1 = value1.Elem()
+		type1 = value1.Type()
+		kind1 = value1.Kind()
+	}
+	for kind2 == reflect.Interface || kind2 == reflect.Ptr {
+		value2 = value2.Elem()
+		type2 = value2.Type()
+		kind2 = value2.Kind()
+	}
+	if kind1 != reflect.Struct {
+		panic("Can't get fields of " + type1.Name())
+	}
+	if kind2 != reflect.Struct {
+		panic("Can't get fields of " + type2.Name())
+	}
+	v1 := value1.FieldByName(field1)
+	v2 := value2.FieldByName(field2)
+	if v1 == *new(reflect.Value) {
+		panic(`No "` + field1 + `" field found in ` + type1.Name())
+	}
+	if v2 == *new(reflect.Value) {
+		panic(`No "` + field2 + `" field found in ` + type2.Name())
+	}
+	column1 := GetM2MColumnName(t1, field1)
+	column2 := GetM2MColumnName(t2, field2)
+	if column2 < column1 {
+		type1, type2 = type2, type1
+		value1, value2 = value2, value1
+		kind1, kind2 = kind2, kind1
+		v1, v2 = v2, v1
+		column1, column2 = column2, column1
+	}
+	columns = append(columns, column1, column2)
+	values = append(values, v1.Interface(), v2.Interface())
+	return
+}
+
+// GetM2MQuotedFields wraps the fields returned by GetM2MFields in quotes.
+func GetM2MQuotedFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{}) {
+	columns, values = GetM2MFields(t1, field1, t2, field2)
+	for pos, column := range columns {
+		columns[pos] = "`" + column.(string) + "`"
+	}
+	return
 }

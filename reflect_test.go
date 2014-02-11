@@ -16,6 +16,14 @@ func (t testType) GetSQLTableName() string {
 	return "test_types"
 }
 
+type testType2 struct {
+	ID string
+}
+
+func (t testType2) GetSQLTableName() string {
+	return "more_tests"
+}
+
 func TestReflectedProperties(t *testing.T) {
 	foo := testType{
 		myInt:          1,
@@ -147,4 +155,155 @@ func TestOmittedColumn(t *testing.T) {
 			t.Errorf("omitted_column should not have shown up, but it did.")
 		}
 	}
+}
+
+func TestGetM2MTableName(t *testing.T) {
+	tableName := GetM2MTableName(testType{}, testType2{})
+	if tableName != "more_tests_test_types" {
+		t.Errorf("Expected `%s`, got `%s`", "more_tests_test_types", tableName)
+	}
+	tableName2 := GetM2MTableName(testType2{}, testType{})
+	if tableName2 != "more_tests_test_types" {
+		t.Errorf("Expected `%s`, got `%s`", "more_tests_test_types", tableName2)
+	}
+	if tableName != tableName2 {
+		t.Errorf("`%s` is not equal to `%s`", tableName, tableName2)
+	}
+}
+
+func TestGetAbsoluteColumnName(t *testing.T) {
+	columnName := GetAbsoluteColumnName(testType{}, "MyString")
+	if columnName != "`test_types`.`my_string`" {
+		t.Errorf("Expected `%s`, got `%s`", "`test_types`.`my_string`", columnName)
+	}
+}
+
+func TestGetM2MColumnName(t *testing.T) {
+	columnName := GetM2MColumnName(testType{}, "MyString")
+	if columnName != "test_types_my_string" {
+		t.Errorf("Expected `%s`, got `%s`", "test_types_my_string", columnName)
+	}
+}
+
+func TestGetM2MQuotedColumnName(t *testing.T) {
+	columnName := GetM2MQuotedColumnName(testType{}, "MyString")
+	if columnName != "`test_types_my_string`" {
+		t.Errorf("Expected %s, got %s", "`test_types_my_string`", columnName)
+	}
+}
+
+func TestGetM2MAbsoluteColumnName(t *testing.T) {
+	columnName := GetM2MAbsoluteColumnName(testType{}, "MyString", testType2{})
+	if columnName != "`more_tests_test_types`.`test_types_my_string`" {
+		t.Errorf("Expected %s, got %s", "`more_tests_test_types`.`test_types_my_string`", columnName)
+	}
+}
+
+func TestGetM2MFields(t *testing.T) {
+	t1 := testType{MyString: "hello"}
+	t2 := testType2{ID: "world"}
+	columns, values := GetM2MFields(t1, "MyString", t2, "ID")
+	columns2, values2 := GetM2MFields(t2, "ID", t1, "MyString")
+	columns3, values3 := GetM2MFields(&t1, "MyString", &t2, "ID")
+	columns4, values4 := GetM2MFields(sqlTableNamer(t1), "MyString", sqlTableNamer(t2), "ID")
+	columns5, values5 := GetM2MFields(sqlTableNamer(&t1), "MyString", sqlTableNamer(&t2), "ID")
+	columns6, _ := GetM2MQuotedFields(t1, "MyString", t2, "ID")
+	if columns[0].(string) != "more_tests_id" {
+		t.Errorf("Expected %s, got %s", "more_tests_id", columns[0])
+	}
+	if columns[1].(string) != "test_types_my_string" {
+		t.Errorf("Expected %s, got %s", "test_types_my_string", columns[1])
+	}
+	if columns2[0].(string) != "more_tests_id" {
+		t.Errorf("Expected %s, got %s", "more_tests_id", columns2[0])
+	}
+	if columns2[1].(string) != "test_types_my_string" {
+		t.Errorf("Expected %s, got %s", "test_types_my_string", columns2[1])
+	}
+	if values[0].(string) != "world" {
+		t.Errorf("Expected %s, got %s", "world", values[0].(string))
+	}
+	if values[1].(string) != "hello" {
+		t.Errorf("Expected %s, got %s", "hello", values[1].(string))
+	}
+	if values2[0].(string) != "world" {
+		t.Errorf("Expected %s, got %s", "world", values2[0].(string))
+	}
+	if values2[1].(string) != "hello" {
+		t.Errorf("Expected %s, got %s", "hello", values2[1].(string))
+	}
+	if columns3[0].(string) != "more_tests_id" {
+		t.Errorf("Expected %s, got %s", "more_tests_id", columns[0])
+	}
+	if columns3[1].(string) != "test_types_my_string" {
+		t.Errorf("Expected %s, got %s", "test_types_my_string", columns[1])
+	}
+	if columns4[0].(string) != "more_tests_id" {
+		t.Errorf("Expected %s, got %s", "more_tests_id", columns2[0])
+	}
+	if columns4[1].(string) != "test_types_my_string" {
+		t.Errorf("Expected %s, got %s", "test_types_my_string", columns2[1])
+	}
+	if values3[0].(string) != "world" {
+		t.Errorf("Expected %s, got %s", "world", values3[0].(string))
+	}
+	if values3[1].(string) != "hello" {
+		t.Errorf("Expected %s, got %s", "hello", values3[1].(string))
+	}
+	if values4[0].(string) != "world" {
+		t.Errorf("Expected %s, got %s", "world", values4[0].(string))
+	}
+	if values4[1].(string) != "hello" {
+		t.Errorf("Expected %s, got %s", "hello", values4[1].(string))
+	}
+	if columns5[0].(string) != "more_tests_id" {
+		t.Errorf("Expected %s, got %s", "more_tests_id", columns5[0])
+	}
+	if columns5[1].(string) != "test_types_my_string" {
+		t.Errorf("Expected %s, got %s", "test_types_my_string", columns5[1])
+	}
+	if values5[0].(string) != "world" {
+		t.Errorf("Expected %s, got %s", "world", values5[0].(string))
+	}
+	if values5[1].(string) != "hello" {
+		t.Errorf("Expected %s, got %s", "hello", values5[1].(string))
+	}
+	if columns6[0].(string) != "`more_tests_id`" {
+		t.Errorf("Expected %s, got %s", "`more_tests_id`", columns6[0].(string))
+	}
+	if columns6[1].(string) != "`test_types_my_string`" {
+		t.Errorf("Expected %s, got %s", "`test_types_my_string`", columns6[1].(string))
+	}
+}
+
+func TestInvalidM2MFieldTypes1(t *testing.T) {
+	defer func() {
+		t.Log(recover())
+	}()
+	fields, values := GetM2MFields(&testType{}, "NotARealProperty", &testType2{}, "ID")
+	t.Errorf("Expected a panic, got `%v` and `%v` instead.", fields, values)
+}
+
+func TestInvalidM2MFieldTypes2(t *testing.T) {
+	defer func() {
+		t.Log(recover())
+	}()
+	fields, values := GetM2MFields(&testType{}, "MyString", &testType2{}, "NotARealProperty")
+	t.Errorf("Expected a panic, got `%v` and `%v` instead.", fields, values)
+}
+
+func TestNonStructM2MFieldTypes1(t *testing.T) {
+	defer func() {
+		t.Log(recover())
+	}()
+	fields, values := GetM2MFields(invalidSqlFieldReflector("test"), "mystring", &testType2{}, "ID")
+	t.Errorf("Expected a panic, got `%v` and `%v` instead.", fields, values)
+}
+
+func TestNonStructM2MFieldTypes2(t *testing.T) {
+	defer func() {
+		t.Log(recover())
+	}()
+	fields, values := GetM2MFields(&testType{}, "MyString", invalidSqlFieldReflector("test"), "ID")
+	t.Errorf("Expected a panic, got `%v` and `%v` instead.", fields, values)
 }
