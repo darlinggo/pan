@@ -1,6 +1,7 @@
 package pan
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -9,6 +10,7 @@ import (
 )
 
 const TAG_NAME = "sql_column" // The tag that will be read
+var NotAStructError = errors.New("dst not a struct")
 
 func validTag(s string) bool {
 	if s == "" {
@@ -268,4 +270,38 @@ func GetM2MQuotedFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field
 		columns[pos] = "`" + column.(string) + "`"
 	}
 	return
+}
+
+type Scannable interface {
+	Scan(dest ...interface{}) error
+}
+
+func Unmarshal(s Scannable, dst interface{}) error {
+	t := reflect.TypeOf(dst)
+	v := reflect.ValueOf(dst)
+	k := t.Kind()
+	for k == reflect.Interface || k == reflect.Ptr {
+		v = v.Elem()
+		t = v.Type()
+		k = t.Kind()
+	}
+	if k != reflect.Struct {
+		return s.Scan(dst)
+	}
+	pointers := []interface{}{}
+	for i := 0; i < t.NumField(); i++ {
+		if t.Field(i).PkgPath != "" {
+			// skip unexported fields
+			continue
+		}
+		field := getFieldColumn(t.Field(i), true)
+		if field == "" {
+			continue
+		}
+
+		// Get the value of the field
+		pointers = append(pointers, v.Field(i).Addr().Interface())
+		fmt.Printf("Added pointer %v\n", v.Field(i).Addr().Interface())
+	}
+	return s.Scan(pointers...)
 }
