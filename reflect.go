@@ -7,6 +7,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const TAG_NAME = "sql_column" // The tag that will be read
