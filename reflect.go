@@ -1,7 +1,6 @@
 package pan
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -12,7 +11,6 @@ import (
 )
 
 const TAG_NAME = "sql_column" // The tag that will be read
-var NotAStructError = errors.New("dst not a struct")
 
 func validTag(s string) bool {
 	if s == "" {
@@ -303,7 +301,6 @@ func Unmarshal(s Scannable, dst interface{}) error {
 
 		// Get the value of the field
 		pointers = append(pointers, v.Field(i).Addr().Interface())
-		fmt.Printf("Added pointer %v\n", v.Field(i).Addr().Interface())
 	}
 	return s.Scan(pointers...)
 }

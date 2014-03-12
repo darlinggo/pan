@@ -354,4 +354,5 @@ func TestUnmarshal(t *testing.T) {
 	if expectation.MyString != dummy.MyString {
 		t.Errorf("Expected MyString to be %s, was %s.", dummy.MyString, expectation.MyString)
 	}
+	os.Remove("./test.db")
 }
