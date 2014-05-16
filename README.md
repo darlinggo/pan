@@ -128,6 +128,11 @@ QueryList joins the passed fields into a string that can be used when selecting 
 or specifying fields in an update or insert.
 
 
+## func Unmarshal
+``` go
+func Unmarshal(s Scannable, dst interface{}) error
+```
+
 ## func VariableList
 ``` go
 func VariableList(num int) string
@@ -218,7 +223,7 @@ value is added to the Query's Args.
 
 ### func (\*Query) IncludeLimit
 ``` go
-func (q *Query) IncludeLimit(limit int) *Query
+func (q *Query) IncludeLimit(limit int64) *Query
 ```
 IncludeLimit includes the LIMIT clause if the LIMIT clause has not already been included in the Query.
 This cannot detect LIMIT clauses that are manually added to the Query's SQL; it only tracks IncludeLimit().
@@ -228,7 +233,7 @@ The passed int is used as the limit in the resulting query.
 
 ### func (\*Query) IncludeOffset
 ``` go
-func (q *Query) IncludeOffset(offset int) *Query
+func (q *Query) IncludeOffset(offset int64) *Query
 ```
 
 
@@ -265,6 +270,22 @@ String fulfills the String interface for Queries, and returns the generated SQL 
 has been replaced with a counter prefixed with $ (e.g., $1, $2, $3). There is no support for using ?, quoted or not,
 within an expression. All instances of the ? character that are not meant to be substitutions should be as arguments
 in prepared statements.
+
+
+
+## type Scannable
+``` go
+type Scannable interface {
+    Scan(dest ...interface{}) error
+}
+```
+
+
+
+
+
+
+
 
 
 
