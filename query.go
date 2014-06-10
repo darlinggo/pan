@@ -209,7 +209,7 @@ func (q *Query) IncludeOrder(orderClause string) *Query {
 // IncludeLimit includes the LIMIT clause if the LIMIT clause has not already been included in the Query.
 // This cannot detect LIMIT clauses that are manually added to the Query's SQL; it only tracks IncludeLimit().
 // The passed int is used as the limit in the resulting query.
-func (q *Query) IncludeLimit(limit int) *Query {
+func (q *Query) IncludeLimit(limit int64) *Query {
 	if q.IncludesLimit {
 		return q
 	}
@@ -219,7 +219,7 @@ func (q *Query) IncludeLimit(limit int) *Query {
 	return q
 }
 
-func (q *Query) IncludeOffset(offset int) *Query {
+func (q *Query) IncludeOffset(offset int64) *Query {
 	q.Expressions = append(q.Expressions, "OFFSET ?")
 	q.Args = append(q.Args, offset)
 	return q
