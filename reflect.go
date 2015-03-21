@@ -68,7 +68,7 @@ func getFieldColumn(f reflect.StructField, quote bool) string {
 	return field
 }
 
-func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []interface{}) {
+func getFields(s sqlTableNamer, quoted, full bool) (fields []interface{}, values []interface{}) {
 	t := reflect.TypeOf(s)
 	v := reflect.ValueOf(s)
 	k := t.Kind()
@@ -85,12 +85,21 @@ func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []inter
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(t.Field(i), true)
+		field := getFieldColumn(t.Field(i), quoted)
 		if field == "" {
 			continue
 		}
 		if full {
-			field = "`" + s.GetSQLTableName() + "`." + field
+			tablename := ""
+			if quoted {
+				tablename = "`"
+			}
+			tablename = tablename + s.GetSQLTableName()
+			if quoted {
+				tablename = tablename + "`"
+			}
+			tablename = tablename + "."
+			field = tablename + field
 		}
 
 		// Get the value of the field
@@ -106,7 +115,11 @@ func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []inter
 // e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
 // those properties. Fields will be surrounding in ` marks.
 func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, false)
+	return getFields(s, true, false)
+}
+
+func GetFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
+	return getFields(s, false, false)
 }
 
 // GetAbsoluteFields returns a slice of the fields in the passed type, with their names
@@ -115,7 +128,11 @@ func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{
 // those properties. Fields will be surrounded in \` marks and prefixed with their table name, as
 // determined by the passed type's GetSQLTableName. The format will be \`table_name\`.\`field_name\`.
 func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, true)
+	return getFields(s, true, true)
+}
+
+func GetUnquotedAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
+	return getFields(s, false, true)
 }
 
 // GetColumn returns the field name associated with the specified property in the passed value.
@@ -130,6 +147,10 @@ func GetColumn(s interface{}, property string) string {
 // panic.
 func GetAbsoluteColumnName(s sqlTableNamer, property string) string {
 	return fmt.Sprintf("`%s`.%s", GetTableName(s), GetColumn(s, property))
+}
+
+func GetUnquotedAbsoluteColumn(s sqlTableNamer, property string) string {
+	return fmt.Sprintf("%s.%s", s.GetSQLTableName(), getColumn(s, property, false))
 }
 
 func getColumn(s interface{}, property string, quote bool) string {
