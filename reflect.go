@@ -8,7 +8,10 @@ import (
 	"unicode/utf8"
 )
 
-const TAG_NAME = "sql_column" // The tag that will be read
+const (
+	TAG_NAME      = "sql_column" // The tag that will be read
+	ExpressionTag = "sql_expression"
+)
 
 func validTag(s string) bool {
 	if s == "" {
@@ -68,7 +71,15 @@ func getFieldColumn(f reflect.StructField, quote bool) string {
 	return field
 }
 
-func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []interface{}) {
+func getFieldExpression(f reflect.StructField) string {
+	field := f.Tag.Get(ExpressionTag)
+	if field == "-" {
+		return ""
+	}
+	return field
+}
+
+func getFields(s sqlTableNamer, full, expressions bool) (fields []interface{}, values []interface{}) {
 	t := reflect.TypeOf(s)
 	v := reflect.ValueOf(s)
 	k := t.Kind()
@@ -86,10 +97,17 @@ func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []inter
 			continue
 		}
 		field := getFieldColumn(t.Field(i), true)
+		var expr bool
+		if field == "" {
+			if expressions {
+				expr = true
+				field = getFieldExpression(t.Field(i))
+			}
+		}
 		if field == "" {
 			continue
 		}
-		if full {
+		if full && !expr {
 			field = "`" + s.GetSQLTableName() + "`." + field
 		}
 
@@ -106,7 +124,11 @@ func getFields(s sqlTableNamer, full bool) (fields []interface{}, values []inter
 // e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
 // those properties. Fields will be surrounding in ` marks.
 func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, false)
+	return getFields(s, false, false)
+}
+
+func GetQuotedFieldsAndExpressions(s sqlTableNamer) (fields, values []interface{}) {
+	return getFields(s, false, true)
 }
 
 // GetAbsoluteFields returns a slice of the fields in the passed type, with their names
@@ -115,7 +137,11 @@ func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{
 // those properties. Fields will be surrounded in \` marks and prefixed with their table name, as
 // determined by the passed type's GetSQLTableName. The format will be \`table_name\`.\`field_name\`.
 func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, true)
+	return getFields(s, true, false)
+}
+
+func GetAbsoluteFieldsAndExpressions(s sqlTableNamer) (fields, values []interface{}) {
+	return getFields(s, true, true)
 }
 
 // GetColumn returns the field name associated with the specified property in the passed value.

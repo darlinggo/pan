@@ -14,6 +14,7 @@ type testType struct {
 	MyString       string
 	myTaggedString string `sql_column:"tagged_string"`
 	OmittedColumn  string `sql_column:"-"`
+	Expression     string `sql_column:"-" sql_expression:"COUNT(*)"`
 }
 
 func (t testType) GetSQLTableName() string {
@@ -34,6 +35,7 @@ func TestReflectedProperties(t *testing.T) {
 		MyTaggedInt:    2,
 		MyString:       "hello",
 		myTaggedString: "world",
+		Expression:     "bar",
 	}
 	fields, values := GetAbsoluteFields(foo)
 	if len(fields) != 2 {
@@ -51,6 +53,18 @@ func TestReflectedProperties(t *testing.T) {
 		}
 		if field == "`test_types`.`my_string`" && values[pos].(string) != "hello" {
 			t.Errorf("Expected my_string to be %s, got %v", "hello", values[pos])
+		}
+	}
+	fields, values = GetAbsoluteFieldsAndExpressions(foo)
+	if len(fields) != 3 {
+		t.Errorf("Fields should have length %d, has length %d", 3, len(fields))
+	}
+	if len(values) != 3 {
+		t.Errorf("Values should have length %d, has length %d", 3, len(values))
+	}
+	for _, field := range fields {
+		if field != "`test_types`.`tagged_int`" && field != "`test_types`.`my_string`" && field != "COUNT(*)" {
+			t.Errorf("Unknown field found: % v'", field)
 		}
 	}
 }
@@ -101,7 +115,7 @@ func (i invalidSqlFieldReflector) GetSQLTableName() string {
 }
 
 func TestInvalidFieldReflection(t *testing.T) {
-	fields, values := getFields(invalidSqlFieldReflector("test"), true)
+	fields, values := getFields(invalidSqlFieldReflector("test"), true, false)
 	if len(fields) != 0 {
 		t.Errorf("Expected %d fields, got %d.", 0, len(fields))
 	}
@@ -111,7 +125,7 @@ func TestInvalidFieldReflection(t *testing.T) {
 }
 
 func TestInterfaceOrPointerFieldReflection(t *testing.T) {
-	fields, values := getFields(&testType{}, false)
+	fields, values := getFields(&testType{}, false, false)
 	if len(fields) != 2 {
 		t.Errorf("Expected %d fields, but got %v", len(fields), fields)
 	}
@@ -121,7 +135,7 @@ func TestInterfaceOrPointerFieldReflection(t *testing.T) {
 
 	var i sqlTableNamer
 	i = testType{}
-	fields, values = getFields(i, false)
+	fields, values = getFields(i, false, false)
 	if len(fields) != 2 {
 		t.Errorf("Expected %d fields, but got %v", len(fields), fields)
 	}
@@ -130,7 +144,7 @@ func TestInterfaceOrPointerFieldReflection(t *testing.T) {
 	}
 
 	i = &testType{}
-	fields, values = getFields(i, false)
+	fields, values = getFields(i, false, false)
 	if len(fields) != 2 {
 		t.Errorf("Expected %d fields, but got %v", len(fields), fields)
 	}
