@@ -320,6 +320,9 @@ func Unmarshal(s Scannable, dst interface{}) error {
 		}
 		field := getFieldColumn(t.Field(i), true)
 		if field == "" {
+			field = getFieldExpression(t.Field(i))
+		}
+		if field == "" {
 			continue
 		}
 
