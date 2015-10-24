@@ -357,7 +357,8 @@ func TestUnmarshal(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	row := db.QueryRow("SELECT * FROM test_types;")
+	fields, _ = GetQuotedFieldsAndExpressions(dummy)
+	row := db.QueryRow("SELECT " + QueryList(fields) + " FROM test_types;")
 	err = Unmarshal(row, &expectation)
 	if err != nil {
 		t.Error(err)
