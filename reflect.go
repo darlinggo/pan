@@ -56,7 +56,7 @@ func toSnake(s string) string {
 	return snake
 }
 
-func getFieldColumn(f reflect.StructField, quote bool) string {
+func getFieldColumn(f reflect.StructField) string {
 	// Get the SQL column name, from the tag or infer it
 	field := f.Tag.Get(TAG_NAME)
 	if field == "-" {
@@ -64,9 +64,6 @@ func getFieldColumn(f reflect.StructField, quote bool) string {
 	}
 	if field == "" || !validTag(field) {
 		field = toSnake(f.Name)
-	}
-	if quote {
-		field = "`" + field + "`"
 	}
 	return field
 }
@@ -79,7 +76,7 @@ func getFieldExpression(f reflect.StructField) string {
 	return field
 }
 
-func getFields(s sqlTableNamer, quoted, full, expressions bool) (fields []interface{}, values []interface{}) {
+func getFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
 	t := reflect.TypeOf(s)
 	v := reflect.ValueOf(s)
 	k := t.Kind()
@@ -96,29 +93,11 @@ func getFields(s sqlTableNamer, quoted, full, expressions bool) (fields []interf
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(t.Field(i), quoted)
-		var expr bool
-		if field == "" {
-			if expressions {
-				expr = true
-				field = getFieldExpression(t.Field(i))
-			}
-		}
+		field := getFieldColumn(t.Field(i))
 		if field == "" {
 			continue
 		}
-		if full && !expr {
-			var tablename string
-			if quoted {
-				tablename = "`"
-			}
-			tablename = tablename + s.GetSQLTableName()
-			if quoted {
-				tablename = tablename + "`"
-			}
-			tablename = tablename + "."
-			field = tablename + field
-		}
+		field = s.GetSQLTableName() + "." + field
 
 		// Get the value of the field
 		value := v.Field(i).Interface()
@@ -141,7 +120,7 @@ func GetQuotedFieldsAndExpressions(s sqlTableNamer) (fields, values []interface{
 }
 
 func GetFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, false, false, false)
+	return getFields(s)
 }
 
 // GetAbsoluteFields returns a slice of the fields in the passed type, with their names
@@ -177,6 +156,12 @@ func GetAbsoluteColumnName(s sqlTableNamer, property string) string {
 
 func GetUnquotedAbsoluteColumn(s sqlTableNamer, property string) string {
 	return fmt.Sprintf("%s.%s", s.GetSQLTableName(), getColumn(s, property, false))
+}
+
+type ColumnList []string
+
+func (c ColumnList) String() string {
+	strings.Join(c, ", ")
 }
 
 func getColumn(s interface{}, property string, quote bool) string {

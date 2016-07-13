@@ -27,12 +27,22 @@ type Query struct {
 }
 
 // New creates a new Query object. The passed engine is used to format variables. The passed string is used to prefix the query.
-func New(engine dbengine, query string) *Query {
+func New(query string) *Query {
 	return &Query{
-		Engine: engine,
-		SQL:    query,
-		Args:   []interface{}{},
+		SQL:  query,
+		Args: []interface{}{},
 	}
+}
+
+func Insert(obj interface{}, values ...interface{}) *Query {
+	columns, _ := getFields(obj)
+	query := New("INSERT INTO " + GetTableName(object) + "(" + strings.Join(columns, ", ") + ") VALUES ")
+
+	for _, v := range values {
+		_, fieldValuesSlice := getFields(v)
+		query.Include("("+VariableList(len(fieldValuesSlice))+")", fieldValuesSlice)
+	}
+	return query
 }
 
 // WrongNumberArgsError is thrown when a Query is evaluated whose Args does not match its Expressions.
