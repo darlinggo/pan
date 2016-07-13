@@ -3,44 +3,40 @@ package pan
 import (
 	"fmt"
 	"math"
-	"reflect"
 	"strings"
 	"unicode/utf8"
 )
 
-type dbengine int
-
-const (
-	MYSQL dbengine = iota
-	POSTGRES
-)
-
 // Query contains the data needed to perform a single SQL query.
 type Query struct {
-	SQL           string
-	Args          []interface{}
-	Expressions   []string
-	IncludesWhere bool
-	IncludesOrder bool
-	IncludesLimit bool
-	Engine        dbengine
+	sql           string
+	args          []interface{}
+	expressions   []string
+	includesWhere bool
+	includesOrder bool
+}
+
+type ColumnList []string
+
+func (c ColumnList) String() string {
+	return strings.Join(c, ", ")
 }
 
 // New creates a new Query object. The passed engine is used to format variables. The passed string is used to prefix the query.
 func New(query string) *Query {
 	return &Query{
-		SQL:  query,
-		Args: []interface{}{},
+		sql:  query,
+		args: []interface{}{},
 	}
 }
 
-func Insert(obj interface{}, values ...interface{}) *Query {
-	columns, _ := getFields(obj)
-	query := New("INSERT INTO " + GetTableName(object) + "(" + strings.Join(columns, ", ") + ") VALUES ")
+func Insert(obj SQLTableNamer, values ...SQLTableNamer) *Query {
+	columns := Columns(obj)
+	query := New("INSERT INTO " + Table(obj) + "(" + columns.String() + ") VALUES ")
 
 	for _, v := range values {
-		_, fieldValuesSlice := getFields(v)
-		query.Include("("+VariableList(len(fieldValuesSlice))+")", fieldValuesSlice)
+		columnValues := ColumnValues(v)
+		query.Expression("("+VariableList(len(columnValues))+")", columnValues)
 	}
 	return query
 }
@@ -57,43 +53,21 @@ func (e WrongNumberArgsError) Error() string {
 }
 
 func (q *Query) checkCounts() error {
-	placeholders := strings.Count(q.SQL, "?")
-	args := len(q.Args)
+	placeholders := strings.Count(q.sql, "?")
+	args := len(q.args)
 	if placeholders != args {
 		return WrongNumberArgsError{NumExpected: placeholders, NumFound: args}
 	}
 	return nil
 }
 
-// Generate creates a string from the Query, joining its SQL property and its Expressions. Expressions are joined
-// using the join string supplied.
-func (q *Query) Generate(join string) string {
-	if len(q.Expressions) > 0 {
-		q.FlushExpressions(join)
-	}
-	return q.String()
-}
-
-// String fulfills the String interface for Queries, and returns the generated SQL query after every instance of ?
-// has been replaced with a counter prefixed with $ (e.g., $1, $2, $3). There is no support for using ?, quoted or not,
-// within an expression. All instances of the ? character that are not meant to be substitutions should be as arguments
-// in prepared statements.
 func (q *Query) String() string {
-	if err := q.checkCounts(); err != nil {
-		return ""
-	}
-	var output string
-	switch q.Engine {
-	case POSTGRES:
-		output = q.postgresProcess()
-	case MYSQL:
-		output = q.mysqlProcess()
-	}
-	return output
+	// TODO(paddy): return the query with values injected
+	return ""
 }
 
 func (q *Query) mysqlProcess() string {
-	return q.SQL + ";"
+	return q.sql + ";"
 }
 
 func (q *Query) postgresProcess() string {
@@ -104,8 +78,8 @@ func (q *Query) postgresProcess() string {
 	replacementRune, _ := utf8.DecodeRune([]byte(replacementString))
 	terminatorString := ";"
 	terminatorBytes := []byte(terminatorString)
-	toReplace := float64(strings.Count(q.SQL, replacementString))
-	bytesNeeded := float64(len(q.SQL) + len(replacementString))
+	toReplace := float64(strings.Count(q.sql, replacementString))
+	bytesNeeded := float64(len(q.sql) + len(replacementString))
 	powerCounter := float64(1)
 	powerMax := math.Pow(10, powerCounter) - 1
 	prevMax := float64(0)
@@ -118,8 +92,8 @@ func (q *Query) postgresProcess() string {
 	bytesNeeded += ((toReplace - prevMax) * powerCounter)
 	output := make([]byte, int(bytesNeeded))
 	buffer := make([]byte, utf8.UTFMax)
-	for pos < len(q.SQL) {
-		r, width = utf8.DecodeRuneInString(q.SQL[pos:])
+	for pos < len(q.sql) {
+		r, width = utf8.DecodeRuneInString(q.sql[pos:])
 		pos += width
 		if r == replacementRune {
 			newText := []byte(fmt.Sprintf("$%d", count))
@@ -142,100 +116,73 @@ func (q *Query) postgresProcess() string {
 	return string(output)
 }
 
-// FlushExpressions joins the Query's Expressions with the join string, then concatenates them
-// to the Query's SQL. It then resets the Query's Expressions. This permits Expressions to be joined
-// by different strings within a single Query.
-func (q *Query) FlushExpressions(join string) *Query {
-	q.SQL = strings.TrimSpace(q.SQL) + " "
-	q.SQL += strings.TrimSpace(strings.Join(q.Expressions, join))
-	q.Expressions = q.Expressions[0:0]
+func (q *Query) Flush(join string) *Query {
+	q.sql = strings.TrimSpace(q.sql) + " "
+	q.sql += strings.TrimSpace(strings.Join(q.expressions, join))
+	q.expressions = q.expressions[0:0]
 	return q
 }
 
-// IncludeIfNotNil adds the supplied key (which should be an expression) to the Query's Expressions if
-// and only if the value parameter is not a nil value. If the key is added to the Query's Expressions, the
-// value is added to the Query's Args.
-func (q *Query) IncludeIfNotNil(key string, value interface{}) *Query {
-	val := reflect.ValueOf(value)
-	kind := val.Kind()
-	if kind == reflect.Chan || kind == reflect.Func {
+func (q *Query) Expression(key string, values ...interface{}) *Query {
+	q.expressions = append(q.expressions, key)
+	q.args = append(q.args, values...)
+	return q
+}
+
+func (q *Query) Where() *Query {
+	if q.includesWhere {
 		return q
 	}
-	if kind != reflect.Map && kind != reflect.Slice && kind != reflect.Interface && kind != reflect.Ptr {
-		return q.IncludeIfNotEmpty(key, value)
+	q.Expression("WHERE")
+	q.Flush(" ")
+	q.includesWhere = true
+	return q
+}
+
+func (q *Query) Comparison(obj SQLTableNamer, property, operator string, value interface{}) *Query {
+	return q.Expression(Column(obj, property)+" "+operator+" ?", value)
+}
+
+func (q *Query) In(obj SQLTableNamer, property string, values ...interface{}) *Query {
+	return q.Expression(Column(obj, property)+" IN("+VariableList(len(values))+")", values...)
+}
+
+func (q *Query) orderBy(orderClause, dir string) *Query {
+	exp := ", "
+	if !q.includesOrder {
+		exp = "ORDER BY "
 	}
-	if val.IsNil() {
-		return q
-	}
-	q.Expressions = append(q.Expressions, key)
-	q.Args = append(q.Args, value)
+	q.Expression(exp + orderClause + dir)
+	q.includesOrder = true
 	return q
 }
 
-// IncludeIfNotEmpty adds the supplied key (which should be an expression) to the Query's Expressions if
-// and only if the value parameter is not the empty value for its type. If the key is added to the Query's
-// Expressions, the value is added to the Query's Args.
-func (q *Query) IncludeIfNotEmpty(key string, value interface{}) *Query {
-	if reflect.DeepEqual(value, reflect.Zero(reflect.TypeOf(value)).Interface()) {
-		return q
-	}
-	q.Expressions = append(q.Expressions, key)
-	q.Args = append(q.Args, value)
-	return q
+func (q *Query) OrderBy(column string) *Query {
+	return q.orderBy(column, "")
 }
 
-// Include adds the supplied key (which should be an expression) to the Query's Expressions and the value
-// to the Query's Args.
-func (q *Query) Include(key string, values ...interface{}) *Query {
-	q.Expressions = append(q.Expressions, key)
-	q.Args = append(q.Args, values...)
-	return q
+func (q *Query) OrderByDesc(column string) *Query {
+	return q.orderBy(column, " DESC")
 }
 
-// IncludeWhere includes the WHERE clause if the WHERE clause has not already been included in the Query.
-// This cannot detect WHERE clauses that are manually added to the Query's SQL; it only tracks IncludeWhere().
-func (q *Query) IncludeWhere() *Query {
-	if q.IncludesWhere {
-		return q
-	}
-	q.Expressions = append(q.Expressions, "WHERE")
-	q.FlushExpressions(" ")
-	q.IncludesWhere = true
-	return q
+func (q *Query) Limit(limit int64) *Query {
+	return q.Expression("LIMIT ?", limit)
 }
 
-// IncludeOrder includes the ORDER BY clause if the ORDER BY clause has not already been included in the Query.
-// This cannot detect ORDER BY clauses that are manually added to the Query's SQL; it only tracks IncludeOrder().
-// The passed string is used as the expression to order by.
-func (q *Query) IncludeOrder(orderClause string) *Query {
-	if q.IncludesOrder {
-		return q
-	}
-	q.Expressions = append(q.Expressions, "ORDER BY "+orderClause)
-	q.IncludesOrder = true
-	return q
+func (q *Query) Offset(offset int64) *Query {
+	return q.Expression("OFFSET ?", offset)
 }
 
-// IncludeLimit includes the LIMIT clause if the LIMIT clause has not already been included in the Query.
-// This cannot detect LIMIT clauses that are manually added to the Query's SQL; it only tracks IncludeLimit().
-// The passed int is used as the limit in the resulting query.
-func (q *Query) IncludeLimit(limit int64) *Query {
-	if q.IncludesLimit {
-		return q
-	}
-	q.Expressions = append(q.Expressions, "LIMIT ?")
-	q.Args = append(q.Args, limit)
-	q.IncludesLimit = true
-	return q
+func (q *Query) PostgreSQLString() (string, error) {
+	// TODO(paddy): return the PostgreSQL formatted q.sql
+	return "", nil
 }
 
-func (q *Query) IncludeOffset(offset int64) *Query {
-	q.Expressions = append(q.Expressions, "OFFSET ?")
-	q.Args = append(q.Args, offset)
-	return q
+func (q *Query) MySQLString() (string, error) {
+	// TODO(paddy): return the MySQL formatted q.sql
+	return "", nil
 }
 
-func (q *Query) InnerJoin(table, expression string) *Query {
-	q.Expressions = append(q.Expressions, "INNER JOIN "+table+" ON "+expression)
-	return q
+func (q *Query) Args() []interface{} {
+	return q.args
 }
