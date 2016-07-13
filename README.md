@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/DramaFever/pan.png)](https://travis-ci.org/DramaFever/pan)
+[![Build Status](https://travis-ci.org/secondbit/pan.png)](https://travis-ci.org/secondbit/pan)
 
 # pan
     import "github.com/DramaFever/pan"

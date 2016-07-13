@@ -115,7 +115,7 @@ func (i invalidSqlFieldReflector) GetSQLTableName() string {
 }
 
 func TestInvalidFieldReflection(t *testing.T) {
-	fields, values := getFields(invalidSqlFieldReflector("test"), true, false)
+	fields, values := getFields(invalidSqlFieldReflector("test"), true, false, false)
 	if len(fields) != 0 {
 		t.Errorf("Expected %d fields, got %d.", 0, len(fields))
 	}
@@ -125,7 +125,7 @@ func TestInvalidFieldReflection(t *testing.T) {
 }
 
 func TestInterfaceOrPointerFieldReflection(t *testing.T) {
-	fields, values := getFields(&testType{}, false, false)
+	fields, values := getFields(&testType{}, false, false, false)
 	if len(fields) != 2 {
 		t.Errorf("Expected %d fields, but got %v", len(fields), fields)
 	}
@@ -135,7 +135,7 @@ func TestInterfaceOrPointerFieldReflection(t *testing.T) {
 
 	var i sqlTableNamer
 	i = testType{}
-	fields, values = getFields(i, false, false)
+	fields, values = getFields(i, false, false, false)
 	if len(fields) != 2 {
 		t.Errorf("Expected %d fields, but got %v", len(fields), fields)
 	}
@@ -144,7 +144,7 @@ func TestInterfaceOrPointerFieldReflection(t *testing.T) {
 	}
 
 	i = &testType{}
-	fields, values = getFields(i, false, false)
+	fields, values = getFields(i, false, false, false)
 	if len(fields) != 2 {
 		t.Errorf("Expected %d fields, but got %v", len(fields), fields)
 	}
