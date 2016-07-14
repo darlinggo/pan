@@ -65,8 +65,22 @@ func (q *Query) checkCounts() error {
 }
 
 func (q *Query) String() string {
-	// TODO(paddy): return the query with values injected
-	return ""
+	var argPos int
+	var res string
+	toCheck := q.sql
+	for i := strings.Index(toCheck, "?"); i >= 0; argPos++ {
+		var arg interface{}
+		arg = "!{MISSING}"
+		if len(q.args) > argPos {
+			arg = q.args[argPos]
+		}
+		res += toCheck[:i]
+		res += fmt.Sprintf("%v", arg)
+		toCheck = toCheck[i+1:]
+		i = strings.Index(toCheck, "?")
+	}
+	res += toCheck
+	return res
 }
 
 func (q *Query) MySQLString() (string, error) {

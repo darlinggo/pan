@@ -212,7 +212,7 @@ func TestOffset(t *testing.T) {
 	}
 }
 
-func BenchmarkMySQLQueriesFromTable(b *testing.B) {
+func BenchmarkMySQLString(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		test := queryTests[b.N%len(queryTests)]
@@ -221,11 +221,20 @@ func BenchmarkMySQLQueriesFromTable(b *testing.B) {
 	}
 }
 
-func BenchmarkPostgreSQLQueriesFromTable(b *testing.B) {
+func BenchmarkPostgreSQLString(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		test := queryTests[b.N%len(queryTests)]
 		b.StartTimer()
 		test.Query.PostgreSQLString()
+	}
+}
+
+func BenchmarkQueryString(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		test := queryTests[b.N%len(queryTests)]
+		b.StartTimer()
+		test.Query.String()
 	}
 }
