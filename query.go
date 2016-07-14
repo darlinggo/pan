@@ -31,24 +31,27 @@ func New(query string) *Query {
 }
 
 func Insert(obj SQLTableNamer, values ...SQLTableNamer) *Query {
+	inserts := make([]SQLTableNamer, 0, len(values)+1)
+	inserts = append(inserts, obj)
+	inserts = append(inserts, values...)
 	columns := Columns(obj)
-	query := New("INSERT INTO " + Table(obj) + "(" + columns.String() + ") VALUES ")
+	query := New("INSERT INTO " + Table(obj) + " (" + columns.String() + ") VALUES")
 
-	for _, v := range values {
+	for _, v := range inserts {
 		columnValues := ColumnValues(v)
-		query.Expression("("+VariableList(len(columnValues))+")", columnValues)
+		query.Expression("("+VariableList(len(columnValues))+")", columnValues...)
 	}
-	return query
+	return query.Flush(" ")
 }
 
-// WrongNumberArgsError is thrown when a Query is evaluated whose Args does not match its Expressions.
-type WrongNumberArgsError struct {
+// ErrWrongNumberArgs is thrown when a Query is evaluated whose Args does not match its Expressions.
+type ErrWrongNumberArgs struct {
 	NumExpected int
 	NumFound    int
 }
 
 // Error fulfills the error interface, returning the expected number of arguments and the number supplied.
-func (e WrongNumberArgsError) Error() string {
+func (e ErrWrongNumberArgs) Error() string {
 	return fmt.Sprintf("Expected %d arguments, got %d.", e.NumExpected, e.NumFound)
 }
 
@@ -56,7 +59,7 @@ func (q *Query) checkCounts() error {
 	placeholders := strings.Count(q.sql, "?")
 	args := len(q.args)
 	if placeholders != args {
-		return WrongNumberArgsError{NumExpected: placeholders, NumFound: args}
+		return ErrWrongNumberArgs{NumExpected: placeholders, NumFound: args}
 	}
 	return nil
 }
@@ -66,11 +69,17 @@ func (q *Query) String() string {
 	return ""
 }
 
-func (q *Query) mysqlProcess() string {
-	return q.sql + ";"
+func (q *Query) MySQLString() (string, error) {
+	if err := q.checkCounts(); err != nil {
+		return "", err
+	}
+	return q.sql + ";", nil
 }
 
-func (q *Query) postgresProcess() string {
+func (q *Query) PostgreSQLString() (string, error) {
+	if err := q.checkCounts(); err != nil {
+		return "", err
+	}
 	var pos, width, outputPos int
 	var r rune
 	var count = 1
@@ -113,7 +122,7 @@ func (q *Query) postgresProcess() string {
 	for i := 0; i < len(terminatorBytes); i++ {
 		output[len(output)-(len(terminatorBytes)-i)] = terminatorBytes[i]
 	}
-	return string(output)
+	return string(output), nil
 }
 
 func (q *Query) Flush(join string) *Query {
@@ -147,13 +156,17 @@ func (q *Query) In(obj SQLTableNamer, property string, values ...interface{}) *Q
 	return q.Expression(Column(obj, property)+" IN("+VariableList(len(values))+")", values...)
 }
 
+func (q *Query) Assign(obj SQLTableNamer, property string, value interface{}) *Query {
+	return q.Expression(Column(obj, property)+" = ?", value)
+}
+
 func (q *Query) orderBy(orderClause, dir string) *Query {
 	exp := ", "
 	if !q.includesOrder {
 		exp = "ORDER BY "
+		q.includesOrder = true
 	}
 	q.Expression(exp + orderClause + dir)
-	q.includesOrder = true
 	return q
 }
 
@@ -171,16 +184,6 @@ func (q *Query) Limit(limit int64) *Query {
 
 func (q *Query) Offset(offset int64) *Query {
 	return q.Expression("OFFSET ?", offset)
-}
-
-func (q *Query) PostgreSQLString() (string, error) {
-	// TODO(paddy): return the PostgreSQL formatted q.sql
-	return "", nil
-}
-
-func (q *Query) MySQLString() (string, error) {
-	// TODO(paddy): return the MySQL formatted q.sql
-	return "", nil
 }
 
 func (q *Query) Args() []interface{} {

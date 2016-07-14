@@ -67,8 +67,8 @@ func getFieldColumn(f reflect.StructField) string {
 }
 
 func readStruct(s SQLTableNamer) (columns []string, values []interface{}) {
-	t := reflect.TypeOf(s)
 	v := reflect.ValueOf(s)
+	t := reflect.TypeOf(s)
 	k := t.Kind()
 	for k == reflect.Interface || k == reflect.Ptr {
 		v = v.Elem()
@@ -106,11 +106,14 @@ func Columns(s SQLTableNamer) ColumnList {
 // Property must correspond exactly to the name of the property in the type, or this function will
 // panic.
 func Column(s SQLTableNamer, property string) string {
+	// BUG(paddy): return the table name as part of the column name
+	// when we put in a cache for reflect, we should refactor this to use readStruct
 	return getColumn(s, property)
 }
 
 func ColumnValues(s SQLTableNamer) []interface{} {
-	return nil
+	_, values := readStruct(s)
+	return values
 }
 
 func getColumn(s interface{}, property string) string {
