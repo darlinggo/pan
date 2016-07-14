@@ -43,6 +43,7 @@ var sqlTable = map[*Query]queryResult{
 
 func TestSQLTable(t *testing.T) {
 	for query, expectation := range sqlTable {
+		t.Logf(query.String())
 		mysql, err := query.MySQLString()
 		if err != nil {
 			t.Errorf("Unexpected error: %+v\n", err)
@@ -57,5 +58,19 @@ func TestSQLTable(t *testing.T) {
 		if postgres != expectation.postgres {
 			t.Errorf("Expected '%s' got '%s'", expectation.postgres, postgres)
 		}
+	}
+}
+
+func BenchmarkInsertGeneration(b *testing.B) {
+	p := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
+	for i := 0; i < b.N; i++ {
+		Insert(p)
+	}
+}
+
+func BenchmarkQueryGeneration(b *testing.B) {
+	p := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
+	for i := 0; i < b.N; i++ {
+		New("SELECT "+Columns(p).String()+" FROM "+Table(p)).Where().Comparison(p, "ID", "=", p.ID).Expression("OR").In(p, "ID", 123, 456, 789, 101112, 131415).OrderBy(Column(p, "Created")).Limit(10).Flush(" ")
 	}
 }
