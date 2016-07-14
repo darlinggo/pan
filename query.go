@@ -2,9 +2,8 @@ package pan
 
 import (
 	"fmt"
-	"math"
+	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 // Query contains the data needed to perform a single SQL query.
@@ -94,49 +93,17 @@ func (q *Query) PostgreSQLString() (string, error) {
 	if err := q.checkCounts(); err != nil {
 		return "", err
 	}
-	var pos, width, outputPos int
-	var r rune
-	var count = 1
-	replacementString := "?"
-	replacementRune, _ := utf8.DecodeRune([]byte(replacementString))
-	terminatorString := ";"
-	terminatorBytes := []byte(terminatorString)
-	toReplace := float64(strings.Count(q.sql, replacementString))
-	bytesNeeded := float64(len(q.sql) + len(replacementString))
-	powerCounter := float64(1)
-	powerMax := math.Pow(10, powerCounter) - 1
-	prevMax := float64(0)
-	for powerMax < toReplace {
-		bytesNeeded += ((powerMax - prevMax) * powerCounter)
-		prevMax = powerMax
-		powerCounter += 1
-		powerMax = math.Pow(10, powerCounter) - 1
+	count := 1
+	var res string
+	toCheck := q.sql
+	for i := strings.Index(toCheck, "?"); i >= 0; count++ {
+		res += toCheck[:i]
+		res += "$" + strconv.Itoa(count)
+		toCheck = toCheck[i+1:]
+		i = strings.Index(toCheck, "?")
 	}
-	bytesNeeded += ((toReplace - prevMax) * powerCounter)
-	output := make([]byte, int(bytesNeeded))
-	buffer := make([]byte, utf8.UTFMax)
-	for pos < len(q.sql) {
-		r, width = utf8.DecodeRuneInString(q.sql[pos:])
-		pos += width
-		if r == replacementRune {
-			newText := []byte(fmt.Sprintf("$%d", count))
-			for _, b := range newText {
-				output[outputPos] = b
-				outputPos += 1
-			}
-			count += 1
-			continue
-		}
-		used := utf8.EncodeRune(buffer[0:], r)
-		for b := 0; b < used; b++ {
-			output[outputPos] = buffer[b]
-			outputPos += 1
-		}
-	}
-	for i := 0; i < len(terminatorBytes); i++ {
-		output[len(output)-(len(terminatorBytes)-i)] = terminatorBytes[i]
-	}
-	return string(output), nil
+	res += toCheck
+	return res + ";", nil
 }
 
 func (q *Query) Flush(join string) *Query {
