@@ -1,6 +1,7 @@
 package pan
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"unicode"
@@ -9,6 +10,10 @@ import (
 
 const (
 	TAG_NAME = "sql_column" // The tag that will be read
+)
+
+var (
+	structReadCache = map[string][]string{}
 )
 
 func validTag(s string) bool {
@@ -46,10 +51,6 @@ func toSnake(s string) string {
 
 		n := utf8.EncodeRune(buf, c)
 		snake += string(buf[0:n])
-		// clear the buffer
-		for i := 0; i < n; i++ {
-			buf[i] = 0
-		}
 	}
 	return snake
 }
@@ -66,7 +67,12 @@ func getFieldColumn(f reflect.StructField) string {
 	return field
 }
 
-func readStruct(s SQLTableNamer) (columns []string, values []interface{}) {
+// if needsValues is false, we'll attempt to use the cache and won't return any values
+func readStruct(s SQLTableNamer, needsValues bool) (columns []string, values []interface{}) {
+	typ := fmt.Sprintf("%T", s)
+	if cached, ok := structReadCache[typ]; !needsValues && ok {
+		return cached, nil
+	}
 	v := reflect.ValueOf(s)
 	t := reflect.TypeOf(s)
 	k := t.Kind()
@@ -94,11 +100,12 @@ func readStruct(s SQLTableNamer) (columns []string, values []interface{}) {
 		columns = append(columns, field)
 		values = append(values, value)
 	}
+	structReadCache[typ] = columns
 	return
 }
 
 func Columns(s SQLTableNamer) ColumnList {
-	columns, _ := readStruct(s)
+	columns, _ := readStruct(s, false)
 	return columns
 }
 
@@ -112,7 +119,7 @@ func Column(s SQLTableNamer, property string) string {
 }
 
 func ColumnValues(s SQLTableNamer) []interface{} {
-	_, values := readStruct(s)
+	_, values := readStruct(s, true)
 	return values
 }
 
