@@ -25,12 +25,12 @@ func init() {
 		postgres: "INSERT INTO test_data (test_data.id, test_data.title, test_data.author_id, test_data.body, test_data.created, test_data.modified) VALUES ($1,$2,$3,$4,$5,$6);",
 	}
 	sqlTable[New("UPDATE "+Table(p)+" SET").Assign(p, "Title", p.Title).Assign(p, "Author", p.Author).Flush(", ").Where().Comparison(p, "ID", "=", p.ID).Flush(" ")] = queryResult{
-		mysql:    "UPDATE test_data SET title = ?, author_id = ? WHERE id = ?;",
-		postgres: "UPDATE test_data SET title = $1, author_id = $2 WHERE id = $3;",
+		mysql:    "UPDATE test_data SET test_data.title = ?, test_data.author_id = ? WHERE test_data.id = ?;",
+		postgres: "UPDATE test_data SET test_data.title = $1, test_data.author_id = $2 WHERE test_data.id = $3;",
 	}
 	sqlTable[New("SELECT "+Columns(p).String()+" FROM "+Table(p)).Where().Expression(Column(p, "Created")+" > (SELECT "+Column(p, "Created")+" FROM "+Table(p)+" WHERE "+Column(p, "ID")+" = ?)", 123).Where().OrderByDesc(Column(p, "Created")).Limit(19).Flush(" ")] = queryResult{
-		postgres: "SELECT test_data.id, test_data.title, test_data.author_id, test_data.body, test_data.created, test_data.modified FROM test_data WHERE created > (SELECT created FROM test_data WHERE id = $1) ORDER BY created DESC LIMIT $2;",
-		mysql:    "SELECT test_data.id, test_data.title, test_data.author_id, test_data.body, test_data.created, test_data.modified FROM test_data WHERE created > (SELECT created FROM test_data WHERE id = ?) ORDER BY created DESC LIMIT ?;",
+		postgres: "SELECT test_data.id, test_data.title, test_data.author_id, test_data.body, test_data.created, test_data.modified FROM test_data WHERE test_data.created > (SELECT test_data.created FROM test_data WHERE test_data.id = $1) ORDER BY test_data.created DESC LIMIT $2;",
+		mysql:    "SELECT test_data.id, test_data.title, test_data.author_id, test_data.body, test_data.created, test_data.modified FROM test_data WHERE test_data.created > (SELECT test_data.created FROM test_data WHERE test_data.id = ?) ORDER BY test_data.created DESC LIMIT ?;",
 	}
 }
 
@@ -42,6 +42,7 @@ var sqlTable = map[*Query]queryResult{
 }
 
 func TestSQLTable(t *testing.T) {
+	t.Parallel()
 	for query, expectation := range sqlTable {
 		t.Logf(query.String())
 		mysql, err := query.MySQLString()

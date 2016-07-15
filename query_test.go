@@ -135,6 +135,7 @@ func init() {
 }
 
 func TestQueriesFromTable(t *testing.T) {
+	t.Parallel()
 	for pos, test := range queryTests {
 		t.Logf("Testing: %s", test.Query.sql)
 		mysql, mErr := test.Query.MySQLString()
@@ -155,6 +156,7 @@ func TestQueriesFromTable(t *testing.T) {
 }
 
 func TestErrWrongNumberArgs(t *testing.T) {
+	t.Parallel()
 	q := New("?")
 	q.args = append(q.args, 1, 2, 3)
 	err := q.checkCounts()
@@ -177,6 +179,7 @@ func TestErrWrongNumberArgs(t *testing.T) {
 }
 
 func TestRepeatedOrder(t *testing.T) {
+	t.Parallel()
 	q := New("SELECT * FROM test_data")
 	q.OrderBy("id")
 	q.OrderBy("name")
@@ -191,6 +194,7 @@ func TestRepeatedOrder(t *testing.T) {
 }
 
 func TestOffset(t *testing.T) {
+	t.Parallel()
 	q := New("SELECT * FROM test_data")
 	q.Offset(10).Flush(" ")
 	mysql, err := q.MySQLString()

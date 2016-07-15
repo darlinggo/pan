@@ -23,6 +23,7 @@ func (t testType2) GetSQLTableName() string {
 }
 
 func TestReflectedProperties(t *testing.T) {
+	t.Parallel()
 	foo := testType{
 		myInt:          1,
 		MyTaggedInt:    2,
@@ -58,6 +59,7 @@ var tags = map[string]bool{
 }
 
 func TestValidTag(t *testing.T) {
+	t.Parallel()
 	for input, validity := range tags {
 		if validTag(input) != validity {
 			expectedValidity := "valid"
@@ -82,6 +84,7 @@ var camelToSnake = map[string]string{
 }
 
 func TestCamelToSnake(t *testing.T) {
+	t.Parallel()
 	for input, expectedOutput := range camelToSnake {
 		if expectedOutput != toSnake(input) {
 			t.Errorf("Expected `%s` to be `%s`, was `%s`", input, expectedOutput, toSnake(input))
@@ -96,6 +99,7 @@ func (i invalidSqlFieldReflector) GetSQLTableName() string {
 }
 
 func TestInvalidFieldReflection(t *testing.T) {
+	t.Parallel()
 	columns := Columns(invalidSqlFieldReflector("test"))
 	values := ColumnValues(invalidSqlFieldReflector("test"))
 	if len(columns) != 0 {
@@ -107,6 +111,7 @@ func TestInvalidFieldReflection(t *testing.T) {
 }
 
 func TestInterfaceOrPointerFieldReflection(t *testing.T) {
+	t.Parallel()
 	columns := Columns(&testType{})
 	if len(columns) != 2 {
 		t.Errorf("Expected %d columns, but got %v", len(columns), columns)
@@ -139,6 +144,7 @@ func TestInterfaceOrPointerFieldReflection(t *testing.T) {
 }
 
 func TestInvalidColumnTypes(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		t.Log(recover())
 	}()
@@ -147,6 +153,7 @@ func TestInvalidColumnTypes(t *testing.T) {
 }
 
 func TestOmittedColumn(t *testing.T) {
+	t.Parallel()
 	columns := Columns(&testType{})
 	for _, column := range columns {
 		if column == "omitted_column" {

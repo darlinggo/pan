@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
@@ -14,6 +15,7 @@ const (
 
 var (
 	structReadCache = map[string][]string{}
+	structReadMutex sync.RWMutex
 )
 
 func validTag(s string) bool {
@@ -70,9 +72,12 @@ func getFieldColumn(f reflect.StructField) string {
 // if needsValues is false, we'll attempt to use the cache and won't return any values
 func readStruct(s SQLTableNamer, needsValues bool) (columns []string, values []interface{}) {
 	typ := fmt.Sprintf("%T", s)
+	structReadMutex.RLock()
 	if cached, ok := structReadCache[typ]; !needsValues && ok {
+		structReadMutex.RUnlock()
 		return cached, nil
 	}
+	structReadMutex.RUnlock()
 	v := reflect.ValueOf(s)
 	t := reflect.TypeOf(s)
 	k := t.Kind()
@@ -94,13 +99,18 @@ func readStruct(s SQLTableNamer, needsValues bool) (columns []string, values []i
 			continue
 		}
 		field = s.GetSQLTableName() + "." + field
-
-		// Get the value of the field
-		value := v.Field(i).Interface()
 		columns = append(columns, field)
-		values = append(values, value)
+
+		if needsValues {
+			// Get the value of the field
+			value := v.Field(i).Interface()
+			values = append(values, value)
+		}
 	}
+
+	structReadMutex.Lock()
 	structReadCache[typ] = columns
+	structReadMutex.Unlock()
 	return
 }
 
@@ -113,17 +123,6 @@ func Columns(s SQLTableNamer) ColumnList {
 // Property must correspond exactly to the name of the property in the type, or this function will
 // panic.
 func Column(s SQLTableNamer, property string) string {
-	// BUG(paddy): return the table name as part of the column name
-	// when we put in a cache for reflect, we should refactor this to use readStruct
-	return getColumn(s, property)
-}
-
-func ColumnValues(s SQLTableNamer) []interface{} {
-	_, values := readStruct(s, true)
-	return values
-}
-
-func getColumn(s interface{}, property string) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
 	for k == reflect.Interface || k == reflect.Ptr {
@@ -137,7 +136,13 @@ func getColumn(s interface{}, property string) string {
 	if !ok {
 		panic("Field not found in type: " + property)
 	}
-	return getFieldColumn(field)
+	column := s.GetSQLTableName() + "." + getFieldColumn(field)
+	return column
+}
+
+func ColumnValues(s SQLTableNamer) []interface{} {
+	_, values := readStruct(s, true)
+	return values
 }
 
 type SQLTableNamer interface {
