@@ -3,6 +3,7 @@ package pan
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -69,7 +70,7 @@ func getFieldColumn(f reflect.StructField) string {
 	return field
 }
 
-// if needsValues is false, we'll attempt to use the cache and won't return any values
+// if needsValues is false, we'll attempt to use the cache and `values` will be nil
 func readStruct(s SQLTableNamer, needsValues bool) (columns []string, values []interface{}) {
 	typ := fmt.Sprintf("%T", s)
 	structReadMutex.RLock()
@@ -119,9 +120,6 @@ func Columns(s SQLTableNamer) ColumnList {
 	return columns
 }
 
-// GetColumn returns the field name associated with the specified property in the passed value.
-// Property must correspond exactly to the name of the property in the type, or this function will
-// panic.
 func Column(s SQLTableNamer, property string) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
@@ -149,16 +147,11 @@ type SQLTableNamer interface {
 	GetSQLTableName() string
 }
 
-// GetTableName returns the table name for any type that implements the `GetSQLTableName() string`
-// method signature. The returned string will be used as the name of the table to store the data
-// for all instances of the type.
 func Table(t SQLTableNamer) string {
 	return t.GetSQLTableName()
 }
 
-// VariableList returns a list of `num` variable placeholders for use in SQL queries involving slices
-// and arrays.
-func VariableList(num int) string {
+func Placeholders(num int) string {
 	placeholders := make([]string, num)
 	for pos := 0; pos < num; pos++ {
 		placeholders[pos] = "?"
@@ -166,18 +159,46 @@ func VariableList(num int) string {
 	return strings.Join(placeholders, ",")
 }
 
-// QueryList joins the passed fields into a string that can be used when selecting the fields to return
-// or specifying fields in an update or insert.
-func QueryList(fields []interface{}) string {
-	strs := make([]string, len(fields))
-	for pos, field := range fields {
-		strs[pos] = field.(string)
-	}
-	return strings.Join(strs, ", ")
+type Scannable interface {
+	Scan(dst ...interface{}) error
+	Columns() ([]string, error)
 }
 
-type Scannable interface {
-	Scan(dest ...interface{}) error
+type pointer struct {
+	addr      interface{}
+	column    string
+	sortOrder int
+}
+
+type pointers []pointer
+
+func (p pointers) Len() int { return len(p) }
+
+func (p pointers) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+
+func (p pointers) Less(i, j int) bool { return p[i].sortOrder < p[j].sortOrder }
+
+func getColumnAddrs(s Scannable, in []pointer) ([]interface{}, error) {
+	columns, err := s.Columns()
+	if err != nil {
+		return nil, err
+	}
+	var results pointers
+	for _, pointer := range in {
+		for pos, column := range columns {
+			if column == pointer.column {
+				pointer.sortOrder = pos
+				results = append(results, pointer)
+				break
+			}
+		}
+	}
+	sort.Sort(results)
+	i := make([]interface{}, 0, len(results))
+	for _, res := range results {
+		i = append(i, res.addr)
+	}
+	return i, nil
 }
 
 func Unmarshal(s Scannable, dst interface{}) error {
@@ -192,7 +213,7 @@ func Unmarshal(s Scannable, dst interface{}) error {
 	if k != reflect.Struct {
 		return s.Scan(dst)
 	}
-	pointers := []interface{}{}
+	props := []pointer{}
 	for i := 0; i < t.NumField(); i++ {
 		if t.Field(i).PkgPath != "" {
 			// skip unexported fields
@@ -204,7 +225,15 @@ func Unmarshal(s Scannable, dst interface{}) error {
 		}
 
 		// Get the value of the field
-		pointers = append(pointers, v.Field(i).Addr().Interface())
+		props = append(props, pointer{
+			addr:   v.Field(i).Addr().Interface(),
+			column: field,
+		})
 	}
-	return s.Scan(pointers...)
+
+	addrs, err := getColumnAddrs(s, props)
+	if err != nil {
+		return err
+	}
+	return s.Scan(addrs...)
 }

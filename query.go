@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// Query contains the data needed to perform a single SQL query.
 type Query struct {
 	sql           string
 	args          []interface{}
@@ -21,7 +20,6 @@ func (c ColumnList) String() string {
 	return strings.Join(c, ", ")
 }
 
-// New creates a new Query object. The passed engine is used to format variables. The passed string is used to prefix the query.
 func New(query string) *Query {
 	return &Query{
 		sql:  query,
@@ -38,18 +36,16 @@ func Insert(obj SQLTableNamer, values ...SQLTableNamer) *Query {
 
 	for _, v := range inserts {
 		columnValues := ColumnValues(v)
-		query.Expression("("+VariableList(len(columnValues))+")", columnValues...)
+		query.Expression("("+Placeholders(len(columnValues))+")", columnValues...)
 	}
 	return query.Flush(" ")
 }
 
-// ErrWrongNumberArgs is thrown when a Query is evaluated whose Args does not match its Expressions.
 type ErrWrongNumberArgs struct {
 	NumExpected int
 	NumFound    int
 }
 
-// Error fulfills the error interface, returning the expected number of arguments and the number supplied.
 func (e ErrWrongNumberArgs) Error() string {
 	return fmt.Sprintf("Expected %d arguments, got %d.", e.NumExpected, e.NumFound)
 }
@@ -134,7 +130,7 @@ func (q *Query) Comparison(obj SQLTableNamer, property, operator string, value i
 }
 
 func (q *Query) In(obj SQLTableNamer, property string, values ...interface{}) *Query {
-	return q.Expression(Column(obj, property)+" IN("+VariableList(len(values))+")", values...)
+	return q.Expression(Column(obj, property)+" IN("+Placeholders(len(values))+")", values...)
 }
 
 func (q *Query) Assign(obj SQLTableNamer, property string, value interface{}) *Query {

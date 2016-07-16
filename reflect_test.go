@@ -1,6 +1,12 @@
 package pan
 
-import "testing"
+import (
+	"database/sql"
+	"os"
+	"testing"
+
+	_ "github.com/lib/pq"
+)
 
 type testType struct {
 	myInt          int
@@ -162,11 +168,11 @@ func TestOmittedColumn(t *testing.T) {
 	}
 }
 
-/*
 func TestUnmarshal(t *testing.T) {
-	os.Remove("./test.db")
-
-	db, err := sql.Open("sqlite3", "./test.db")
+	if os.Getenv("PG_DSN") == "" {
+		t.Skip()
+	}
+	db, err := sql.Open("postgres", os.Getenv("PG_DSN"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -184,21 +190,25 @@ func TestUnmarshal(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	fields, values := GetQuotedFields(dummy)
-	q := New(MYSQL, "INSERT INTO "+GetTableName(dummy))
-	q.Include("(" + QueryList(fields) + ")")
-	q.Include("VALUES")
-	q.Include("("+VariableList(len(values))+")", values...)
-	q.FlushExpressions(" ")
-	_, err = db.Exec(q.String(), q.Args...)
+	q := Insert(dummy)
+	mysql, err := q.MySQLString()
 	if err != nil {
 		t.Error(err)
 	}
-	fields, _ = GetQuotedFieldsAndExpressions(dummy)
-	row := db.QueryRow("SELECT " + QueryList(fields) + " FROM test_types;")
-	err = Unmarshal(row, &expectation)
+	_, err = db.Exec(mysql, q.Args()...)
+	if err != nil {
+		t.Log(q.String())
+		t.Error(err)
+	}
+	rows, err := db.Query("SELECT " + Columns(dummy).String() + " FROM test_types;")
 	if err != nil {
 		t.Error(err)
+	}
+	for rows.Next() {
+		err = Unmarshal(rows, &expectation)
+		if err != nil {
+			t.Error(err)
+		}
 	}
 	if expectation.MyTaggedInt != dummy.MyTaggedInt {
 		t.Errorf("Expected MyTaggedInt to be %d, was %d.", dummy.MyTaggedInt, expectation.MyTaggedInt)
@@ -206,5 +216,4 @@ func TestUnmarshal(t *testing.T) {
 	if expectation.MyString != dummy.MyString {
 		t.Errorf("Expected MyString to be %s, was %s.", dummy.MyString, expectation.MyString)
 	}
-	os.Remove("./test.db")
-}*/
+}

@@ -35,7 +35,7 @@ func init() {
 }
 
 var sqlTable = map[*Query]queryResult{
-	New("INSERT INTO "+Table(testPost{})).Expression("("+VariableList(4)+")", "a", "b", "c", "d").Expression("VALUES").Expression("("+VariableList(4)+")", 0, 1, 2, 3).Flush(" "): {
+	New("INSERT INTO "+Table(testPost{})).Expression("("+Placeholders(4)+")", "a", "b", "c", "d").Expression("VALUES").Expression("("+Placeholders(4)+")", 0, 1, 2, 3).Flush(" "): {
 		mysql:    "INSERT INTO test_data (?,?,?,?) VALUES (?,?,?,?);",
 		postgres: "INSERT INTO test_data ($1,$2,$3,$4) VALUES ($5,$6,$7,$8);",
 	},
