@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type testType struct {
@@ -36,7 +36,7 @@ func TestReflectedProperties(t *testing.T) {
 		MyString:       "hello",
 		myTaggedString: "world",
 	}
-	columns := Columns(foo)
+	columns := Columns(foo, FlagFull)
 	if len(columns) != 2 {
 		t.Errorf("Columns should have length %d, has length %d", 2, len(columns))
 	}
@@ -46,7 +46,7 @@ func TestReflectedProperties(t *testing.T) {
 	}
 	for pos, column := range columns {
 		if column != "test_types.tagged_int" && column != "test_types.my_string" {
-			t.Errorf("Unknown column found: %v'", column)
+			t.Errorf("Unknown column found: %v", column)
 		}
 		if column == "test_types.tagged_int" && values[pos].(int) != 2 {
 			t.Errorf("Expected tagged_int to be %d, got %v", 2, values[pos])
@@ -169,10 +169,9 @@ func TestOmittedColumn(t *testing.T) {
 }
 
 func TestUnmarshal(t *testing.T) {
-	if os.Getenv("PG_DSN") == "" {
-		t.Skip()
-	}
-	db, err := sql.Open("postgres", os.Getenv("PG_DSN"))
+	os.Remove("./test.db")
+
+	db, err := sql.Open("sqlite3", "./test.db")
 	if err != nil {
 		t.Error(err)
 	}
@@ -216,4 +215,5 @@ func TestUnmarshal(t *testing.T) {
 	if expectation.MyString != dummy.MyString {
 		t.Errorf("Expected MyString to be %s, was %s.", dummy.MyString, expectation.MyString)
 	}
+	os.Remove("./test.db")
 }

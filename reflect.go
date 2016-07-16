@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	TAG_NAME = "sql_column" // The tag that will be read
+	tagName = "sql_column" // The tag that will be read
 )
 
 var (
@@ -60,7 +60,7 @@ func toSnake(s string) string {
 
 func getFieldColumn(f reflect.StructField) string {
 	// Get the SQL column name, from the tag or infer it
-	field := f.Tag.Get(TAG_NAME)
+	field := f.Tag.Get(tagName)
 	if field == "-" {
 		return ""
 	}
@@ -70,13 +70,49 @@ func getFieldColumn(f reflect.StructField) string {
 	return field
 }
 
+func hasFlags(list []Flag, passed ...Flag) bool {
+	for _, candidate := range passed {
+		var found bool
+		for _, f := range list {
+			if f == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func decorateColumns(columns []string, table string, flags ...Flag) []string {
+	results := make([]string, 0, len(columns))
+	for _, name := range columns {
+		if hasFlags(flags, FlagTicked) {
+			name = "`" + name + "`"
+		} else if hasFlags(flags, FlagDoubleQuoted) {
+			name = `"` + name + `"`
+		}
+		if hasFlags(flags, FlagFull, FlagTicked) {
+			name = "`" + table + "`." + name
+		} else if hasFlags(flags, FlagFull, FlagDoubleQuoted) {
+			name = `"` + table + `".` + name
+		} else if hasFlags(flags, FlagFull) {
+			name = table + "." + name
+		}
+		results = append(results, name)
+	}
+	return results
+}
+
 // if needsValues is false, we'll attempt to use the cache and `values` will be nil
-func readStruct(s SQLTableNamer, needsValues bool) (columns []string, values []interface{}) {
+func readStruct(s SQLTableNamer, needsValues bool, flags ...Flag) (columns []string, values []interface{}) {
 	typ := fmt.Sprintf("%T", s)
 	structReadMutex.RLock()
 	if cached, ok := structReadCache[typ]; !needsValues && ok {
 		structReadMutex.RUnlock()
-		return cached, nil
+		return decorateColumns(cached, s.GetSQLTableName(), flags...), nil
 	}
 	structReadMutex.RUnlock()
 	v := reflect.ValueOf(s)
@@ -99,7 +135,6 @@ func readStruct(s SQLTableNamer, needsValues bool) (columns []string, values []i
 		if field == "" {
 			continue
 		}
-		field = s.GetSQLTableName() + "." + field
 		columns = append(columns, field)
 
 		if needsValues {
@@ -112,15 +147,15 @@ func readStruct(s SQLTableNamer, needsValues bool) (columns []string, values []i
 	structReadMutex.Lock()
 	structReadCache[typ] = columns
 	structReadMutex.Unlock()
-	return
+	return decorateColumns(columns, s.GetSQLTableName(), flags...), values
 }
 
-func Columns(s SQLTableNamer) ColumnList {
-	columns, _ := readStruct(s, false)
+func Columns(s SQLTableNamer, flags ...Flag) ColumnList {
+	columns, _ := readStruct(s, false, flags...)
 	return columns
 }
 
-func Column(s SQLTableNamer, property string) string {
+func Column(s SQLTableNamer, property string, flags ...Flag) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
 	for k == reflect.Interface || k == reflect.Ptr {
@@ -134,8 +169,8 @@ func Column(s SQLTableNamer, property string) string {
 	if !ok {
 		panic("Field not found in type: " + property)
 	}
-	column := s.GetSQLTableName() + "." + getFieldColumn(field)
-	return column
+	columns := decorateColumns([]string{getFieldColumn(field)}, s.GetSQLTableName(), flags...)
+	return columns[0]
 }
 
 func ColumnValues(s SQLTableNamer) []interface{} {
@@ -156,7 +191,7 @@ func Placeholders(num int) string {
 	for pos := 0; pos < num; pos++ {
 		placeholders[pos] = "?"
 	}
-	return strings.Join(placeholders, ",")
+	return strings.Join(placeholders, ", ")
 }
 
 type Scannable interface {

@@ -102,3 +102,18 @@ There are a couple rules about how struct properties map to column names. First,
 By default, a struct property's name is snake-cased, and that is used as the column name. For example, `Name` would become `name`, and `MyInt` would become `my_int`.
 
 If you want more control or want to make columns explicit, the `sql_column` struct tag can be used to override this behaviour.
+
+## Column flags
+
+Sometimes, you need more than the base column name; you may need the full name (`table.column`) or you may be using special characters/need to quote the column name (`"column"` for Postgres, `\`column`\` for MySQL). To support these use cases, the `Column` and `Columns` functions take a variable number of flags (including none):
+
+```go
+Columns() // returns column format
+Columns(FlagFull) // returns table.column format
+Columns(FlagDoubleQuoted) // returns "column" format
+Columns(FlagTicked) // returns `column` format
+Columns(FlagFull, FlagDoubleQuoted) // returns "table"."column" format
+Columns(FlagFull, FlagTicked) // returns `table`.`column` format
+```
+
+This behaviour is not exposed through the convenience functions built on top of `Column` and `Columns`; you'll need to use `Expression` to rebuild them by hand. Usually, this can be done simply; look at the source code for those convenience functions for examples.

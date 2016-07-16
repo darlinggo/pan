@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+const (
+	FlagFull Flag = iota
+	FlagTicked
+	FlagDoubleQuoted
+)
+
 type Query struct {
 	sql           string
 	args          []interface{}
@@ -19,6 +25,8 @@ type ColumnList []string
 func (c ColumnList) String() string {
 	return strings.Join(c, ", ")
 }
+
+type Flag int
 
 func New(query string) *Query {
 	return &Query{
