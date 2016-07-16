@@ -44,7 +44,7 @@ And you have a corresponding `Person` table:
 To use that `Person` type with pan, you need it to fill the `SQLTableNamer` interface, letting pan know to use the `person` table in your database:
 
 ```go
-func (p Person) GetSQLTableName() string{
+func (p Person) GetSQLTableName() string {
     return "person"
 }
 ```
