@@ -44,7 +44,7 @@ And you have a corresponding `Person` table:
 To use that `Person` type with pan, you need it to fill the `SQLTableNamer` interface, letting pan know to use the `person` table in your database:
 
 ```go
-func (p Person)GetSQLTableName()string{
+func (p Person) GetSQLTableName()string{
     return "person"
 }
 ```
@@ -60,7 +60,7 @@ query := pan.New(pan.MYSQL, "SELECT "+pan.Columns(p).String()+" FROM "+pan.Table
 or
 
 ```go
-// selects one person
+// selects one row
 var p Person
 query := pan.New(pan.MYSQL, "SELECT "+pan.Columns(p).String()+" FROM "+pan.Table(p)).Where()
 query.Comparison(p, "ID", "=", 1)
@@ -95,13 +95,9 @@ for rows.Next() {
 }
 ```
 
-## A note about time
+## How struct properties map to columns
 
-If you're going to be reading the MySQL `time` type and you plan to parse that into a Go `time`, you must include `&parseTime=true` in your DSN.
-
-## How Struct Properties Turn Into Column Names
-
-There are a couple rules about how struct properties become column names. First, only exported struct properties are used; unexported properties are ignored.
+There are a couple rules about how struct properties map to column names. First, only exported struct properties are used; unexported properties are ignored.
 
 By default, a struct property's name is snake-cased, and that is used as the column name. For example, `Name` would become `name`, and `MyInt` would become `my_int`.
 
