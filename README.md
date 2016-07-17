@@ -1,5 +1,5 @@
 # Importing pan
-    import "github.com/DramaFever/pan"
+    import "darlinggo.co/pan"
 
 # About pan
 
