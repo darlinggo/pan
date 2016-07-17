@@ -236,7 +236,7 @@ func getColumnAddrs(s Scannable, in []pointer) ([]interface{}, error) {
 	return i, nil
 }
 
-func Unmarshal(s Scannable, dst interface{}) error {
+func Unmarshal(s Scannable, dst interface{}, additional ...interface{}) error {
 	t := reflect.TypeOf(dst)
 	v := reflect.ValueOf(dst)
 	k := t.Kind()
@@ -270,5 +270,6 @@ func Unmarshal(s Scannable, dst interface{}) error {
 	if err != nil {
 		return err
 	}
+	addrs = append(addrs, additional...)
 	return s.Scan(addrs...)
 }
