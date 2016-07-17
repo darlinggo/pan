@@ -11,6 +11,8 @@ Pan’s design focuses on reducing repetition and hardcoded strings in your quer
 
 Docs can be found on [GoDoc.org](https://godoc.org/darlinggo.co/pan).
 
+If you're using pan, we encourage you to join the [pan mailing list](https://groups.google.com/a/darlinggo.co/group/pan), which will be our main mode of communication.
+
 # Using pan
 
 Pan revolves around structs that fill the `SQLTableNamer` interface, by implementing the `GetSQLTableName() string` function, which just returns the name of the table that should store the data for that struct.
