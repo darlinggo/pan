@@ -150,11 +150,16 @@ func readStruct(s SQLTableNamer, needsValues bool, flags ...Flag) (columns []str
 	return decorateColumns(columns, s.GetSQLTableName(), flags...), values
 }
 
+// Columns returns a ColumnList containing the names of the columns
+// in `s`.
 func Columns(s SQLTableNamer, flags ...Flag) ColumnList {
 	columns, _ := readStruct(s, false, flags...)
 	return columns
 }
 
+// Column returns the name of the column that `property` maps to for `s`.
+// `property` must be the exact name of a property on `s`, or Column will
+// panic.
 func Column(s SQLTableNamer, property string, flags ...Flag) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
@@ -173,19 +178,28 @@ func Column(s SQLTableNamer, property string, flags ...Flag) string {
 	return columns[0]
 }
 
+// ColumnValues returns the values in `s` for each column in `s`, in the
+// same order `Columns` returns the names.
 func ColumnValues(s SQLTableNamer) []interface{} {
 	_, values := readStruct(s, true)
 	return values
 }
 
+// SQLTableNamer is used to represent a type that corresponds to an SQL
+// table. It must define the GetSQLTableName method, returning the name
+// of the SQL table to store data for that type in.
 type SQLTableNamer interface {
 	GetSQLTableName() string
 }
 
+// Table is a convenient shorthand wrapper for the GetSQLTableName method
+// on `t`.
 func Table(t SQLTableNamer) string {
 	return t.GetSQLTableName()
 }
 
+// Placeholders returns a formatted string containing `num` placeholders.
+// The placeholders will be comma-separated.
 func Placeholders(num int) string {
 	placeholders := make([]string, num)
 	for pos := 0; pos < num; pos++ {
@@ -194,6 +208,9 @@ func Placeholders(num int) string {
 	return strings.Join(placeholders, ", ")
 }
 
+// Scannable defines a type that can insert the results of a Query into
+// the SQLTableNamer a Query was built from, and can list off the column
+// names, in order, that those results represent.
 type Scannable interface {
 	Scan(dst ...interface{}) error
 	Columns() ([]string, error)
@@ -236,6 +253,11 @@ func getColumnAddrs(s Scannable, in []pointer) ([]interface{}, error) {
 	return i, nil
 }
 
+// Unmarshal reads the Scannable `s` into the variable at `d`, and returns an
+// error if it is unable to. If there are more values than `d` has properties
+// associated with columns, `additional` can be supplied to catch the extra values.
+// The variables in `additional` must be a compatible type with and be in the same
+// order as the columns of `s`.
 func Unmarshal(s Scannable, dst interface{}, additional ...interface{}) error {
 	t := reflect.TypeOf(dst)
 	v := reflect.ValueOf(dst)

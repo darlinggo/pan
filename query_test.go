@@ -106,6 +106,16 @@ var queryTests = []queryTest{
 			args: []interface{}{0},
 		},
 	},
+	queryTest{
+		ExpectedResult: queryResult{
+			err: ErrNeedsFlush,
+		},
+		Query: &Query{
+			sql:         "SELECT * FROM mytable WHERE",
+			args:        []interface{}{0},
+			expressions: []string{"this = ?"},
+		},
+	},
 }
 
 func init() {
@@ -239,6 +249,6 @@ func BenchmarkQueryString(b *testing.B) {
 		b.StopTimer()
 		test := queryTests[b.N%len(queryTests)]
 		b.StartTimer()
-		test.Query.String()
+		_ = test.Query.String()
 	}
 }

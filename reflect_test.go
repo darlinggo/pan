@@ -98,16 +98,16 @@ func TestCamelToSnake(t *testing.T) {
 	}
 }
 
-type invalidSqlFieldReflector string
+type invalidSQLFieldReflector string
 
-func (i invalidSqlFieldReflector) GetSQLTableName() string {
+func (i invalidSQLFieldReflector) GetSQLTableName() string {
 	return "invalid_reflection_table"
 }
 
 func TestInvalidFieldReflection(t *testing.T) {
 	t.Parallel()
-	columns := Columns(invalidSqlFieldReflector("test"))
-	values := ColumnValues(invalidSqlFieldReflector("test"))
+	columns := Columns(invalidSQLFieldReflector("test"))
+	values := ColumnValues(invalidSQLFieldReflector("test"))
 	if len(columns) != 0 {
 		t.Errorf("Expected %d columns, got %d.", 0, len(columns))
 	}
