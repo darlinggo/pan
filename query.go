@@ -169,6 +169,9 @@ func (q *Query) PostgreSQLString() (string, error) {
 // `join`, then added onto the Query’s SQL string, with a space between the SQL string
 // and the expressions.
 func (q *Query) Flush(join string) *Query {
+	if len(q.expressions) < 1 {
+		return q
+	}
 	q.sql = strings.TrimSpace(q.sql) + " "
 	q.sql += strings.TrimSpace(strings.Join(q.expressions, join))
 	q.expressions = q.expressions[0:0]
