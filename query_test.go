@@ -6,84 +6,138 @@ import (
 )
 
 type queryTest struct {
-	ExpectedResult string
+	ExpectedResult queryResult
 	Query          *Query
+}
+
+type queryResult struct {
+	postgres string
+	mysql    string
+	err      error
 }
 
 var queryTests = []queryTest{
 	queryTest{
-		ExpectedResult: "This query expects $1 one arg;",
+		ExpectedResult: queryResult{
+			postgres: "This query expects $1 one arg;",
+			mysql:    "This query expects ? one arg;",
+			err:      nil,
+		},
 		Query: &Query{
-			SQL:    "This query expects ? one arg",
-			Args:   []interface{}{0},
-			Engine: POSTGRES,
+			sql:  "This query expects ? one arg",
+			args: []interface{}{0},
 		},
 	},
 	queryTest{
-		ExpectedResult: "",
+		ExpectedResult: queryResult{
+			postgres: "",
+			mysql:    "",
+			err: ErrWrongNumberArgs{
+				NumExpected: 1,
+				NumFound:    0,
+			},
+		},
 		Query: &Query{
-			SQL:    "This query expects ? one arg but won't get it;",
-			Args:   []interface{}{},
-			Engine: POSTGRES,
+			sql:  "This query expects ? one arg but won't get it;",
+			args: []interface{}{},
 		},
 	},
 	queryTest{
-		ExpectedResult: "",
+		ExpectedResult: queryResult{
+			postgres: "",
+			mysql:    "",
+			err: ErrWrongNumberArgs{
+				NumExpected: 0,
+				NumFound:    1,
+			},
+		},
 		Query: &Query{
-			SQL:    "This query expects no arguments but will get one;",
-			Args:   []interface{}{0},
-			Engine: POSTGRES,
+			sql:  "This query expects no arguments but will get one;",
+			args: []interface{}{0},
 		},
 	},
 	queryTest{
-		ExpectedResult: "",
+		ExpectedResult: queryResult{
+			postgres: "",
+			mysql:    "",
+			err: ErrWrongNumberArgs{
+				NumExpected: 2,
+				NumFound:    1,
+			},
+		},
 		Query: &Query{
-			SQL:    "This query expects ? two args ? but will get one;",
-			Args:   []interface{}{0},
-			Engine: POSTGRES,
+			sql:  "This query expects ? two args ? but will get one;",
+			args: []interface{}{0},
 		},
 	},
 	queryTest{
-		ExpectedResult: "",
+		ExpectedResult: queryResult{
+			postgres: "",
+			mysql:    "",
+			err: ErrWrongNumberArgs{
+				NumExpected: 2,
+				NumFound:    3,
+			},
+		},
 		Query: &Query{
-			SQL:    "This query expects ? ? two args but will get three;",
-			Args:   []interface{}{0, 1, 2},
-			Engine: POSTGRES,
+			sql:  "This query expects ? ? two args but will get three;",
+			args: []interface{}{0, 1, 2},
 		},
 	},
 	queryTest{
-		ExpectedResult: "Unicode test 世 $1;",
+		ExpectedResult: queryResult{
+			postgres: "Unicode test 世 $1;",
+			mysql:    "Unicode test 世 ?;",
+			err:      nil,
+		},
 		Query: &Query{
-			SQL:    "Unicode test 世 ?",
-			Args:   []interface{}{0},
-			Engine: POSTGRES,
+			sql:  "Unicode test 世 ?",
+			args: []interface{}{0},
 		},
 	},
 	queryTest{
-		ExpectedResult: "Unicode boundary test $1 " + string(rune(0x80)) + ";",
+		ExpectedResult: queryResult{
+			postgres: "Unicode boundary test $1 " + string(rune(0x80)) + ";",
+			mysql:    "Unicode boundary test ? " + string(rune(0x80)) + ";",
+			err:      nil,
+		},
 		Query: &Query{
-			SQL:    "Unicode boundary test ? " + string(rune(0x80)),
-			Args:   []interface{}{0},
-			Engine: POSTGRES,
+			sql:  "Unicode boundary test ? " + string(rune(0x80)),
+			args: []interface{}{0},
+		},
+	},
+	queryTest{
+		ExpectedResult: queryResult{
+			err: ErrNeedsFlush,
+		},
+		Query: &Query{
+			sql:         "SELECT * FROM mytable WHERE",
+			args:        []interface{}{0},
+			expressions: []string{"this = ?"},
 		},
 	},
 }
 
 func init() {
-	expected := "lots of args"
-	SQL := "lots of args"
+	postgres := "lots of args"
+	mysql := "lots of args"
+	sql := "lots of args"
 	args := []interface{}{}
 	for i := 1; i < 1001; i++ {
-		SQL += " ?"
-		expected += fmt.Sprintf(" $%d", i)
+		sql += " ?"
+		mysql += " ?"
+		postgres += fmt.Sprintf(" $%d", i)
 		args = append(args, false)
 		if i == 10 || i == 100 || i == 1000 {
 			queryTests = append(queryTests, queryTest{
-				ExpectedResult: expected + ";",
+				ExpectedResult: queryResult{
+					mysql:    mysql + ";",
+					postgres: postgres + ";",
+					err:      nil,
+				},
 				Query: &Query{
-					SQL:    SQL,
-					Args:   args,
-					Engine: POSTGRES,
+					sql:  sql,
+					args: args,
 				},
 			})
 		}
@@ -91,24 +145,36 @@ func init() {
 }
 
 func TestQueriesFromTable(t *testing.T) {
+	t.Parallel()
 	for pos, test := range queryTests {
-		result := test.Query.String()
-		if result != test.ExpectedResult {
-			t.Logf("Expected\n%d\ngot\n%d\n.", []byte(test.ExpectedResult), []byte(result))
-			t.Errorf("Query test %d failed. Expected \"%s\", got \"%s\".", pos+1, test.ExpectedResult, result)
+		t.Logf("Testing: %s", test.Query.sql)
+		mysql, mErr := test.Query.MySQLString()
+		postgres, pErr := test.Query.PostgreSQLString()
+		if (mErr != nil && pErr == nil) || (pErr != nil && mErr == nil) || (mErr != nil && pErr != nil && mErr.Error() != pErr.Error()) {
+			t.Errorf("Expected %v and %v to be the same.\n", mErr, pErr)
+		}
+		if (mErr != nil && test.ExpectedResult.err == nil) || (mErr == nil && test.ExpectedResult.err != nil) || (mErr != nil && test.ExpectedResult.err != nil && mErr.Error() != test.ExpectedResult.err.Error()) {
+			t.Errorf("Expected error to be %v, got %v\n", mErr, test.ExpectedResult.err)
+		}
+		if mysql != test.ExpectedResult.mysql {
+			t.Errorf("Query test %d failed. Expected MySQL to be \"%s\", got \"%s\".\n", pos+1, test.ExpectedResult.mysql, mysql)
+		}
+		if postgres != test.ExpectedResult.postgres {
+			t.Errorf("Query test %d failed: Expected PostgreSQL to be \"%s\", got \"%s\".\n", pos+1, test.ExpectedResult.postgres, postgres)
 		}
 	}
 }
 
-func TestWrongNumberArgsError(t *testing.T) {
-	q := New(POSTGRES, "?")
-	q.Args = append(q.Args, 1, 2, 3)
+func TestErrWrongNumberArgs(t *testing.T) {
+	t.Parallel()
+	q := New("?")
+	q.args = append(q.args, 1, 2, 3)
 	err := q.checkCounts()
 	if err == nil {
 		t.Errorf("Expected error.")
 	}
-	if e, ok := err.(WrongNumberArgsError); !ok {
-		t.Errorf("Error was not a WrongNumberArgsError.")
+	if e, ok := err.(ErrWrongNumberArgs); !ok {
+		t.Errorf("Error was not an ErrWrongNumberArgs.")
 	} else {
 		if e.NumExpected != 1 {
 			t.Errorf("Expected %d expectations, got %d", 1, e.NumExpected)
@@ -122,99 +188,67 @@ func TestWrongNumberArgsError(t *testing.T) {
 	}
 }
 
-func TestIncludeIfNotNil(t *testing.T) {
-	q := New(POSTGRES, "")
-	q.IncludeIfNotNil("hello ?", "world")
-	if q.Generate("") != " hello $1;" {
-		t.Errorf("Expected `%s`, got `%s`", " hello $1;", q.Generate(""))
-	}
-
-	var val *testType
-	q = New(POSTGRES, "")
-	q.IncludeIfNotNil("hello ?", val)
-	if q.Generate("") != ";" {
-		t.Errorf("Expected `%s`, got `%s`", ";", q.Generate(""))
-	}
-
-	q = New(POSTGRES, "")
-	q.IncludeIfNotNil("hello ?", New)
-	if q.Generate("") != ";" {
-		t.Errorf("Expected `%s`, got `%s`", ";", q.Generate(""))
-	}
-}
-
 func TestRepeatedOrder(t *testing.T) {
-	q := New(POSTGRES, "SELECT * FROM test_data")
-	q.IncludeOrder("id DESC")
-	q.IncludeOrder("date DESC")
-	if q.Generate(" ") != "SELECT * FROM test_data ORDER BY id DESC;" {
-		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data ORDER BY id DESC;", q.Generate(" "))
+	t.Parallel()
+	q := New("SELECT * FROM test_data")
+	q.OrderBy("id")
+	q.OrderBy("name")
+	q.OrderByDesc("date")
+	res, err := q.Flush(" ").MySQLString()
+	if err != nil {
+		t.Errorf("Unexpected error: %+v\n", err)
+	}
+	if res != "SELECT * FROM test_data ORDER BY id , name , date DESC;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data ORDER BY id , name , date DESC;", res)
 	}
 }
 
-func TestRepeatedLimit(t *testing.T) {
-	q := New(POSTGRES, "SELECT * FROM test_data")
-	q.IncludeLimit(10)
-	q.IncludeLimit(5)
-	if q.Generate(" ") != "SELECT * FROM test_data LIMIT $1;" {
-		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data LIMIT $1;", q.Generate(" "))
+func TestOffset(t *testing.T) {
+	t.Parallel()
+	q := New("SELECT * FROM test_data")
+	q.Offset(10).Flush(" ")
+	mysql, err := q.MySQLString()
+	if err != nil {
+		t.Errorf("Unexpected error: %+v\n", err)
+	}
+	postgres, err := q.PostgreSQLString()
+	if err != nil {
+		t.Errorf("Unexpected error: %+v\n", err)
+	}
+	if err != nil {
+		t.Errorf("Unexpected error: %+v\n", err)
+	}
+	if mysql != "SELECT * FROM test_data OFFSET ?;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data OFFSET ?;", mysql)
+	}
+	if postgres != "SELECT * FROM test_data OFFSET $1;" {
+		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data OFFSET $1;", postgres)
 	}
 }
 
-// I'm worried that setting the SQL property in String() will cause a problem, so let's find out.
-// I was right. Leaving this test here as penance.
-func TestRepeatedString(t *testing.T) {
-	q := New(POSTGRES, "SELECT * FROM test_data")
-	q.IncludeWhere()
-	q.Include("x = ?", 1)
-	q.IncludeLimit(10)
-	q.FlushExpressions(" ")
-	q2 := *q
-	qstr := q.String()
-	if qstr != "SELECT * FROM test_data WHERE x = $1 LIMIT $2;" {
-		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data WHERE x = $1 LIMIT $2;", qstr)
-	}
-	qstr = q.String()
-	if qstr != "SELECT * FROM test_data WHERE x = $1 LIMIT $2;" {
-		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data WHERE x = $1 LIMIT $2;", qstr)
-	}
-	q2.Engine = MYSQL
-	q2str := q2.String()
-	if q2str != "SELECT * FROM test_data WHERE x = ? LIMIT ?;" {
-		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data WHERE x = ? LIMIT ?;", q2str)
-	}
-	q2str = q2.String()
-	if q2str != "SELECT * FROM test_data WHERE x = ? LIMIT ?;" {
-		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data WHERE x = ? LIMIT ?;", q2str)
-	}
-}
-
-func TestIncludeOffset(t *testing.T) {
-	q := New(POSTGRES, "SELECT * FROM test_data")
-	q.IncludeOffset(10)
-	if q.Generate(" ") != "SELECT * FROM test_data OFFSET $1;" {
-		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data OFFSET $1;", q.Generate(" "))
-	}
-}
-
-func TestInnerJoin(t *testing.T) {
-	q := New(POSTGRES, "SELECT * FROM test_data")
-	q.InnerJoin("other_table", "`test_data`.`x` = `other_table`.`x`")
-	if q.Generate(" ") != "SELECT * FROM test_data INNER JOIN other_table ON `test_data`.`x` = `other_table`.`x`;" {
-		t.Errorf("Expected `%s`, got `%s`", "SELECT * FROM test_data INNER JOIN other_table ON `test_data`.`x` = `other_table`.`x`;", q.Generate(" "))
-	}
-}
-
-func BenchmarkQueriesFromTable(b *testing.B) {
+func BenchmarkMySQLString(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		test := queryTests[b.N%len(queryTests)]
 		b.StartTimer()
-		result := test.Query.String()
+		test.Query.MySQLString()
+	}
+}
+
+func BenchmarkPostgreSQLString(b *testing.B) {
+	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		if result != test.ExpectedResult {
-			b.Errorf("Query test %d failed. Expected \"%s\", got \"%s\".", (b.N%len(queryTests))+1, test.ExpectedResult, result)
-		}
+		test := queryTests[b.N%len(queryTests)]
 		b.StartTimer()
+		test.Query.PostgreSQLString()
+	}
+}
+
+func BenchmarkQueryString(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		test := queryTests[b.N%len(queryTests)]
+		b.StartTimer()
+		_ = test.Query.String()
 	}
 }

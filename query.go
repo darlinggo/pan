@@ -1,231 +1,266 @@
 package pan
 
 import (
+	"errors"
 	"fmt"
-	"math"
-	"reflect"
+	"strconv"
 	"strings"
-	"unicode/utf8"
 )
-
-type dbengine int
 
 const (
-	MYSQL dbengine = iota
-	POSTGRES
+	// FlagFull returns columns in their absolute table.column format.
+	FlagFull Flag = iota
+	// FlagTicked returns columns using ticks to quote the column name, like `column`.
+	FlagTicked
+	// FlagDoubleQuoted returns columns using double quotes to quote the column name, like "column".
+	FlagDoubleQuoted
 )
 
-// Query contains the data needed to perform a single SQL query.
+var (
+	// ErrNeedsFlush is returned when a Query is used while it has expressions left in its buffer
+	// that haven’t been flushed using the Query’s Flush method.
+	ErrNeedsFlush = errors.New("Query has dangling buffer, its Flush method needs to be called")
+)
+
+// Query represents an SQL query that is being built. It can be used from its empty value,
+// or it can be instantiated with the New method.
+//
+// Query instances are used to build SQL query string and argument lists, and consist of an
+// SQL string and a buffer. The Flush method must be called before the Query is used, or you
+// may leave expressions dangling in the buffer.
+//
+// The Query type is not meant to be concurrency-safe; if you need to modify it from multiple
+// goroutines, you need to coordinate that access yourself.
 type Query struct {
-	SQL           string
-	Args          []interface{}
-	Expressions   []string
-	IncludesWhere bool
-	IncludesOrder bool
-	IncludesLimit bool
-	Engine        dbengine
+	sql           string
+	args          []interface{}
+	expressions   []string
+	includesWhere bool
+	includesOrder bool
 }
 
-// New creates a new Query object. The passed engine is used to format variables. The passed string is used to prefix the query.
-func New(engine dbengine, query string) *Query {
+// ColumnList represents a set of columns.
+type ColumnList []string
+
+// String returns the columns in the ColumnList, joined by ", ", often used to create an
+// SQL-formatted list of column names.
+func (c ColumnList) String() string {
+	return strings.Join(c, ", ")
+}
+
+// Flag represents a modification to the returned values from our Column or Columns functions.
+// See the constants defined in this package for valid values.
+type Flag int
+
+// New returns a new Query instance, primed for use.
+func New(query string) *Query {
 	return &Query{
-		Engine: engine,
-		SQL:    query,
-		Args:   []interface{}{},
+		sql:  query,
+		args: []interface{}{},
 	}
 }
 
-// WrongNumberArgsError is thrown when a Query is evaluated whose Args does not match its Expressions.
-type WrongNumberArgsError struct {
+// Insert returns a Query instance containing SQL that will insert the passed `values` into
+// the database. All `values` will be inserted into the same table, so invalid SQL will be
+// generated if all `values` are not the same type.
+func Insert(obj SQLTableNamer, values ...SQLTableNamer) *Query {
+	inserts := make([]SQLTableNamer, 0, len(values)+1)
+	inserts = append(inserts, obj)
+	inserts = append(inserts, values...)
+	columns := Columns(obj)
+	query := New("INSERT INTO " + Table(obj) + " (" + columns.String() + ") VALUES")
+
+	for _, v := range inserts {
+		columnValues := ColumnValues(v)
+		query.Expression("("+Placeholders(len(columnValues))+")", columnValues...)
+	}
+	return query.Flush(" ")
+}
+
+// ErrWrongNumberArgs is returned when you’ve generated a Query with a certain number of
+// placeholders, but supplied a different number of arguments. The NumExpected property
+// holds the number of placeholders in the Query, and the NumFound property holds the
+// number of arguments supplied.
+type ErrWrongNumberArgs struct {
 	NumExpected int
 	NumFound    int
 }
 
-// Error fulfills the error interface, returning the expected number of arguments and the number supplied.
-func (e WrongNumberArgsError) Error() string {
+// Error fills the error interface.
+func (e ErrWrongNumberArgs) Error() string {
 	return fmt.Sprintf("Expected %d arguments, got %d.", e.NumExpected, e.NumFound)
 }
 
 func (q *Query) checkCounts() error {
-	placeholders := strings.Count(q.SQL, "?")
-	args := len(q.Args)
+	placeholders := strings.Count(q.sql, "?")
+	args := len(q.args)
 	if placeholders != args {
-		return WrongNumberArgsError{NumExpected: placeholders, NumFound: args}
+		return ErrWrongNumberArgs{NumExpected: placeholders, NumFound: args}
 	}
 	return nil
 }
 
-// Generate creates a string from the Query, joining its SQL property and its Expressions. Expressions are joined
-// using the join string supplied.
-func (q *Query) Generate(join string) string {
-	if len(q.Expressions) > 0 {
-		q.FlushExpressions(join)
-	}
-	return q.String()
-}
-
-// String fulfills the String interface for Queries, and returns the generated SQL query after every instance of ?
-// has been replaced with a counter prefixed with $ (e.g., $1, $2, $3). There is no support for using ?, quoted or not,
-// within an expression. All instances of the ? character that are not meant to be substitutions should be as arguments
-// in prepared statements.
+// String returns a version of your Query with all the arguments in the place of their
+// placeholders. It does not do any sanitization, and is vulnerable to SQL injection.
+// It is meant as a debugging aid, not to be executed. The string will almost certainly
+// not be valid SQL.
 func (q *Query) String() string {
+	var argPos int
+	var res string
+	toCheck := q.sql
+	for i := strings.Index(toCheck, "?"); i >= 0; argPos++ {
+		var arg interface{}
+		arg = "!{MISSING}"
+		if len(q.args) > argPos {
+			arg = q.args[argPos]
+		}
+		res += toCheck[:i]
+		res += fmt.Sprintf("%v", arg)
+		toCheck = toCheck[i+1:]
+		i = strings.Index(toCheck, "?")
+	}
+	res += toCheck
+	return res
+}
+
+// MySQLString returns a SQL string that can be passed to MySQL to execute your query.
+// If the number of placeholders do not match the number of arguments provided to your
+// Query, an ErrWrongNumberArgs error will be returned. If there are still expressions
+// left in the buffer (meaning the Flush method wasn't called) an ErrNeedsFlush error
+// will be returned.
+func (q *Query) MySQLString() (string, error) {
+	if len(q.expressions) != 0 {
+		return "", ErrNeedsFlush
+	}
 	if err := q.checkCounts(); err != nil {
-		return ""
+		return "", err
 	}
-	var output string
-	switch q.Engine {
-	case POSTGRES:
-		output = q.postgresProcess()
-	case MYSQL:
-		output = q.mysqlProcess()
-	}
-	return output
+	return q.sql + ";", nil
 }
 
-func (q *Query) mysqlProcess() string {
-	return q.SQL + ";"
+// PostgreSQLString returns an SQL string that can be passed to PostgreSQL to execute
+// your query. If the number of placeholders do not match the number of arguments
+// provided to your Query, an ErrWrongNumberArgs error will be returned. If there are
+// still expressions left in the buffer (meaning the Flush method wasn't called) an
+// ErrNeedsFlush error will be returned.
+func (q *Query) PostgreSQLString() (string, error) {
+	if len(q.expressions) != 0 {
+		return "", ErrNeedsFlush
+	}
+	if err := q.checkCounts(); err != nil {
+		return "", err
+	}
+	count := 1
+	var res string
+	toCheck := q.sql
+	for i := strings.Index(toCheck, "?"); i >= 0; count++ {
+		res += toCheck[:i]
+		res += "$" + strconv.Itoa(count)
+		toCheck = toCheck[i+1:]
+		i = strings.Index(toCheck, "?")
+	}
+	res += toCheck
+	return res + ";", nil
 }
 
-func (q *Query) postgresProcess() string {
-	var pos, width, outputPos int
-	var r rune
-	var count = 1
-	replacementString := "?"
-	replacementRune, _ := utf8.DecodeRune([]byte(replacementString))
-	terminatorString := ";"
-	terminatorBytes := []byte(terminatorString)
-	toReplace := float64(strings.Count(q.SQL, replacementString))
-	bytesNeeded := float64(len(q.SQL) + len(replacementString))
-	powerCounter := float64(1)
-	powerMax := math.Pow(10, powerCounter) - 1
-	prevMax := float64(0)
-	for powerMax < toReplace {
-		bytesNeeded += ((powerMax - prevMax) * powerCounter)
-		prevMax = powerMax
-		powerCounter += 1
-		powerMax = math.Pow(10, powerCounter) - 1
-	}
-	bytesNeeded += ((toReplace - prevMax) * powerCounter)
-	output := make([]byte, int(bytesNeeded))
-	buffer := make([]byte, utf8.UTFMax)
-	for pos < len(q.SQL) {
-		r, width = utf8.DecodeRuneInString(q.SQL[pos:])
-		pos += width
-		if r == replacementRune {
-			newText := []byte(fmt.Sprintf("$%d", count))
-			for _, b := range newText {
-				output[outputPos] = b
-				outputPos += 1
-			}
-			count += 1
-			continue
-		}
-		used := utf8.EncodeRune(buffer[0:], r)
-		for b := 0; b < used; b++ {
-			output[outputPos] = buffer[b]
-			outputPos += 1
-		}
-	}
-	for i := 0; i < len(terminatorBytes); i++ {
-		output[len(output)-(len(terminatorBytes)-i)] = terminatorBytes[i]
-	}
-	return string(output)
-}
-
-// FlushExpressions joins the Query's Expressions with the join string, then concatenates them
-// to the Query's SQL. It then resets the Query's Expressions. This permits Expressions to be joined
-// by different strings within a single Query.
-func (q *Query) FlushExpressions(join string) *Query {
-	q.SQL = strings.TrimSpace(q.SQL) + " "
-	q.SQL += strings.TrimSpace(strings.Join(q.Expressions, join))
-	q.Expressions = q.Expressions[0:0]
-	return q
-}
-
-// IncludeIfNotNil adds the supplied key (which should be an expression) to the Query's Expressions if
-// and only if the value parameter is not a nil value. If the key is added to the Query's Expressions, the
-// value is added to the Query's Args.
-func (q *Query) IncludeIfNotNil(key string, value interface{}) *Query {
-	val := reflect.ValueOf(value)
-	kind := val.Kind()
-	if kind == reflect.Chan || kind == reflect.Func {
+// Flush flushes the expressions in the Query’s buffer, adding them to the SQL string
+// being built. It must be called before a Query can be used. Any pending expressions
+// (anything since the last Flush or since the Query was instantiated) are joined using
+// `join`, then added onto the Query’s SQL string, with a space between the SQL string
+// and the expressions.
+func (q *Query) Flush(join string) *Query {
+	if len(q.expressions) < 1 {
 		return q
 	}
-	if kind != reflect.Map && kind != reflect.Slice && kind != reflect.Interface && kind != reflect.Ptr {
-		return q.IncludeIfNotEmpty(key, value)
-	}
-	if val.IsNil() {
+	q.sql = strings.TrimSpace(q.sql) + " "
+	q.sql += strings.TrimSpace(strings.Join(q.expressions, join))
+	q.expressions = q.expressions[0:0]
+	return q
+}
+
+// Expression adds a raw string and optional values to the Query’s buffer.
+func (q *Query) Expression(key string, values ...interface{}) *Query {
+	q.expressions = append(q.expressions, key)
+	q.args = append(q.args, values...)
+	return q
+}
+
+// Where adds a WHERE keyword to the Query’s buffer, then calls Flush on the Query,
+// using a space as the join parameter.
+//
+// Where can only be called once per Query; calling it multiple times on the same Query
+// will be no-ops after the first.
+func (q *Query) Where() *Query {
+	if q.includesWhere {
 		return q
 	}
-	q.Expressions = append(q.Expressions, key)
-	q.Args = append(q.Args, value)
+	q.Expression("WHERE")
+	q.Flush(" ")
+	q.includesWhere = true
 	return q
 }
 
-// IncludeIfNotEmpty adds the supplied key (which should be an expression) to the Query's Expressions if
-// and only if the value parameter is not the empty value for its type. If the key is added to the Query's
-// Expressions, the value is added to the Query's Args.
-func (q *Query) IncludeIfNotEmpty(key string, value interface{}) *Query {
-	if reflect.DeepEqual(value, reflect.Zero(reflect.TypeOf(value)).Interface()) {
-		return q
+// Comparison adds a comparison expression to the Query’s buffer. A comparison takes the
+// form of `column operator ?`, with `value` added as an argument to the Query. Column is
+// determined by finding the column name for the passed property on the passed SQLTableNamer.
+// The passed property must be a string that matches, identically, the property name; if it
+// does not, it will panic.
+func (q *Query) Comparison(obj SQLTableNamer, property, operator string, value interface{}) *Query {
+	return q.Expression(Column(obj, property)+" "+operator+" ?", value)
+}
+
+// In adds an expression to the Query’s buffer in the form of "column IN (value, value, value)".
+// `values` are the variables to match against, and `obj` and `property` are used to determine
+// the column. `property` must exactly match the name of a property on `obj`, or the call will
+// panic.
+func (q *Query) In(obj SQLTableNamer, property string, values ...interface{}) *Query {
+	return q.Expression(Column(obj, property)+" IN("+Placeholders(len(values))+")", values...)
+}
+
+// Assign adds an expression to the Query’s buffer in the form of "column = ?", and adds `value`
+// to the arguments for this query. `obj` and `property` are used to determine the column.
+// `property` must exactly match the name of a property on `obj`, or the call will panic.
+func (q *Query) Assign(obj SQLTableNamer, property string, value interface{}) *Query {
+	return q.Expression(Column(obj, property)+" = ?", value)
+}
+
+func (q *Query) orderBy(orderClause, dir string) *Query {
+	exp := ", "
+	if !q.includesOrder {
+		exp = "ORDER BY "
+		q.includesOrder = true
 	}
-	q.Expressions = append(q.Expressions, key)
-	q.Args = append(q.Args, value)
+	q.Expression(exp + orderClause + dir)
 	return q
 }
 
-// Include adds the supplied key (which should be an expression) to the Query's Expressions and the value
-// to the Query's Args.
-func (q *Query) Include(key string, values ...interface{}) *Query {
-	q.Expressions = append(q.Expressions, key)
-	q.Args = append(q.Args, values...)
-	return q
+// OrderBy adds an expression to the Query’s buffer in the form of "ORDER BY column".
+func (q *Query) OrderBy(column string) *Query {
+	return q.orderBy(column, "")
 }
 
-// IncludeWhere includes the WHERE clause if the WHERE clause has not already been included in the Query.
-// This cannot detect WHERE clauses that are manually added to the Query's SQL; it only tracks IncludeWhere().
-func (q *Query) IncludeWhere() *Query {
-	if q.IncludesWhere {
-		return q
-	}
-	q.Expressions = append(q.Expressions, "WHERE")
-	q.FlushExpressions(" ")
-	q.IncludesWhere = true
-	return q
+// OrderByDesc adds an expression to the Query’s buffer in the form of "ORDER BY column DESC".
+func (q *Query) OrderByDesc(column string) *Query {
+	return q.orderBy(column, " DESC")
 }
 
-// IncludeOrder includes the ORDER BY clause if the ORDER BY clause has not already been included in the Query.
-// This cannot detect ORDER BY clauses that are manually added to the Query's SQL; it only tracks IncludeOrder().
-// The passed string is used as the expression to order by.
-func (q *Query) IncludeOrder(orderClause string) *Query {
-	if q.IncludesOrder {
-		return q
-	}
-	q.Expressions = append(q.Expressions, "ORDER BY "+orderClause)
-	q.IncludesOrder = true
-	return q
+// Limit adds an expression to the Query’s buffer in the form of "LIMIT ?", and adds `limit` as
+// an argument to the Query.
+func (q *Query) Limit(limit int64) *Query {
+	return q.Expression("LIMIT ?", limit)
 }
 
-// IncludeLimit includes the LIMIT clause if the LIMIT clause has not already been included in the Query.
-// This cannot detect LIMIT clauses that are manually added to the Query's SQL; it only tracks IncludeLimit().
-// The passed int is used as the limit in the resulting query.
-func (q *Query) IncludeLimit(limit int64) *Query {
-	if q.IncludesLimit {
-		return q
-	}
-	q.Expressions = append(q.Expressions, "LIMIT ?")
-	q.Args = append(q.Args, limit)
-	q.IncludesLimit = true
-	return q
+// Offset adds an expression to the Query’s buffer in the form of "OFFSET ?", and adds `offset`
+// as an argument to the Query.
+func (q *Query) Offset(offset int64) *Query {
+	return q.Expression("OFFSET ?", offset)
 }
 
-func (q *Query) IncludeOffset(offset int64) *Query {
-	q.Expressions = append(q.Expressions, "OFFSET ?")
-	q.Args = append(q.Args, offset)
-	return q
-}
-
-func (q *Query) InnerJoin(table, expression string) *Query {
-	q.Expressions = append(q.Expressions, "INNER JOIN "+table+" ON "+expression)
-	return q
+// Args returns a slice of the arguments attached to the Query, which should be used when executing
+// your SQL to fill the placeholders.
+//
+// Note that Args returns its internal slice; you should copy the returned slice over before modifying
+// it.
+func (q *Query) Args() []interface{} {
+	return q.args
 }

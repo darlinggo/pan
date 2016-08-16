@@ -3,14 +3,20 @@ package pan
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
 
 const (
-	TAG_NAME      = "sql_column" // The tag that will be read
-	ExpressionTag = "sql_expression"
+	tagName = "sql_column" // The tag that will be read
+)
+
+var (
+	structReadCache = map[string][]string{}
+	structReadMutex sync.RWMutex
 )
 
 func validTag(s string) bool {
@@ -48,40 +54,69 @@ func toSnake(s string) string {
 
 		n := utf8.EncodeRune(buf, c)
 		snake += string(buf[0:n])
-		// clear the buffer
-		for i := 0; i < n; i++ {
-			buf[i] = 0
-		}
 	}
 	return snake
 }
 
-func getFieldColumn(f reflect.StructField, quote bool) string {
+func getFieldColumn(f reflect.StructField) string {
 	// Get the SQL column name, from the tag or infer it
-	field := f.Tag.Get(TAG_NAME)
+	field := f.Tag.Get(tagName)
 	if field == "-" {
 		return ""
 	}
 	if field == "" || !validTag(field) {
 		field = toSnake(f.Name)
 	}
-	if quote {
-		field = "`" + field + "`"
-	}
 	return field
 }
 
-func getFieldExpression(f reflect.StructField) string {
-	field := f.Tag.Get(ExpressionTag)
-	if field == "-" {
-		return ""
+func hasFlags(list []Flag, passed ...Flag) bool {
+	for _, candidate := range passed {
+		var found bool
+		for _, f := range list {
+			if f == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
 	}
-	return field
+	return true
 }
 
-func getFields(s sqlTableNamer, quoted, full, expressions bool) (fields []interface{}, values []interface{}) {
-	t := reflect.TypeOf(s)
+func decorateColumns(columns []string, table string, flags ...Flag) []string {
+	results := make([]string, 0, len(columns))
+	for _, name := range columns {
+		if hasFlags(flags, FlagTicked) {
+			name = "`" + name + "`"
+		} else if hasFlags(flags, FlagDoubleQuoted) {
+			name = `"` + name + `"`
+		}
+		if hasFlags(flags, FlagFull, FlagTicked) {
+			name = "`" + table + "`." + name
+		} else if hasFlags(flags, FlagFull, FlagDoubleQuoted) {
+			name = `"` + table + `".` + name
+		} else if hasFlags(flags, FlagFull) {
+			name = table + "." + name
+		}
+		results = append(results, name)
+	}
+	return results
+}
+
+// if needsValues is false, we'll attempt to use the cache and `values` will be nil
+func readStruct(s SQLTableNamer, needsValues bool, flags ...Flag) (columns []string, values []interface{}) {
+	typ := fmt.Sprintf("%T", s)
+	structReadMutex.RLock()
+	if cached, ok := structReadCache[typ]; !needsValues && ok {
+		structReadMutex.RUnlock()
+		return decorateColumns(cached, s.GetSQLTableName(), flags...), nil
+	}
+	structReadMutex.RUnlock()
 	v := reflect.ValueOf(s)
+	t := reflect.TypeOf(s)
 	k := t.Kind()
 	for k == reflect.Interface || k == reflect.Ptr {
 		v = v.Elem()
@@ -96,90 +131,36 @@ func getFields(s sqlTableNamer, quoted, full, expressions bool) (fields []interf
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(t.Field(i), quoted)
-		var expr bool
-		if field == "" {
-			if expressions {
-				expr = true
-				field = getFieldExpression(t.Field(i))
-			}
-		}
+		field := getFieldColumn(t.Field(i))
 		if field == "" {
 			continue
 		}
-		if full && !expr {
-			var tablename string
-			if quoted {
-				tablename = "`"
-			}
-			tablename = tablename + s.GetSQLTableName()
-			if quoted {
-				tablename = tablename + "`"
-			}
-			tablename = tablename + "."
-			field = tablename + field
+		columns = append(columns, field)
+
+		if needsValues {
+			// Get the value of the field
+			value := v.Field(i).Interface()
+			values = append(values, value)
 		}
-
-		// Get the value of the field
-		value := v.Field(i).Interface()
-		fields = append(fields, field)
-		values = append(values, value)
 	}
-	return
+
+	structReadMutex.Lock()
+	structReadCache[typ] = columns
+	structReadMutex.Unlock()
+	return decorateColumns(columns, s.GetSQLTableName(), flags...), values
 }
 
-// GetQuotedFields returns a slice of the fields in the passed type, with their names
-// drawn from tags or inferred from the property name (which will be lower-cased with underscores,
-// e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
-// those properties. Fields will be surrounding in ` marks.
-func GetQuotedFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, true, false, false)
+// Columns returns a ColumnList containing the names of the columns
+// in `s`.
+func Columns(s SQLTableNamer, flags ...Flag) ColumnList {
+	columns, _ := readStruct(s, false, flags...)
+	return columns
 }
 
-func GetQuotedFieldsAndExpressions(s sqlTableNamer) (fields, values []interface{}) {
-	return getFields(s, true, false, true)
-}
-
-func GetFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, false, false, false)
-}
-
-// GetAbsoluteFields returns a slice of the fields in the passed type, with their names
-// drawn from tags or inferred from the property name (which will be lower-cased with underscores,
-// e.g. CamelCase => camel_case) and a corresponding slice of interface{}s containing the values for
-// those properties. Fields will be surrounded in \` marks and prefixed with their table name, as
-// determined by the passed type's GetSQLTableName. The format will be \`table_name\`.\`field_name\`.
-func GetAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, true, true, false)
-}
-
-func GetAbsoluteFieldsAndExpressions(s sqlTableNamer) (fields, values []interface{}) {
-	return getFields(s, true, true, true)
-}
-
-func GetUnquotedAbsoluteFields(s sqlTableNamer) (fields []interface{}, values []interface{}) {
-	return getFields(s, false, true, false)
-}
-
-// GetColumn returns the field name associated with the specified property in the passed value.
-// Property must correspond exactly to the name of the property in the type, or this function will
+// Column returns the name of the column that `property` maps to for `s`.
+// `property` must be the exact name of a property on `s`, or Column will
 // panic.
-func GetColumn(s interface{}, property string) string {
-	return getColumn(s, property, true)
-}
-
-// GetAbsoluteColumnName returns the field name associated with the specified property in the passed value.
-// Property must correspond exactly to the name of the property in the type, or this function will
-// panic.
-func GetAbsoluteColumnName(s sqlTableNamer, property string) string {
-	return fmt.Sprintf("`%s`.%s", GetTableName(s), GetColumn(s, property))
-}
-
-func GetUnquotedAbsoluteColumn(s sqlTableNamer, property string) string {
-	return fmt.Sprintf("%s.%s", s.GetSQLTableName(), getColumn(s, property, false))
-}
-
-func getColumn(s interface{}, property string, quote bool) string {
+func Column(s SQLTableNamer, property string, flags ...Flag) string {
 	t := reflect.TypeOf(s)
 	k := t.Kind()
 	for k == reflect.Interface || k == reflect.Ptr {
@@ -193,135 +174,91 @@ func getColumn(s interface{}, property string, quote bool) string {
 	if !ok {
 		panic("Field not found in type: " + property)
 	}
-	return getFieldColumn(field, quote)
+	columns := decorateColumns([]string{getFieldColumn(field)}, s.GetSQLTableName(), flags...)
+	return columns[0]
 }
 
-func GetUnquotedColumn(s interface{}, property string) string {
-	return getColumn(s, property, false)
+// ColumnValues returns the values in `s` for each column in `s`, in the
+// same order `Columns` returns the names.
+func ColumnValues(s SQLTableNamer) []interface{} {
+	_, values := readStruct(s, true)
+	return values
 }
 
-type sqlTableNamer interface {
+// SQLTableNamer is used to represent a type that corresponds to an SQL
+// table. It must define the GetSQLTableName method, returning the name
+// of the SQL table to store data for that type in.
+type SQLTableNamer interface {
 	GetSQLTableName() string
 }
 
-// GetTableName returns the table name for any type that implements the `GetSQLTableName() string`
-// method signature. The returned string will be used as the name of the table to store the data
-// for all instances of the type.
-func GetTableName(t sqlTableNamer) string {
+// Table is a convenient shorthand wrapper for the GetSQLTableName method
+// on `t`.
+func Table(t SQLTableNamer) string {
 	return t.GetSQLTableName()
 }
 
-// VariableList returns a list of `num` variable placeholders for use in SQL queries involving slices
-// and arrays.
-func VariableList(num int) string {
+// Placeholders returns a formatted string containing `num` placeholders.
+// The placeholders will be comma-separated.
+func Placeholders(num int) string {
 	placeholders := make([]string, num)
 	for pos := 0; pos < num; pos++ {
 		placeholders[pos] = "?"
 	}
-	return strings.Join(placeholders, ",")
+	return strings.Join(placeholders, ", ")
 }
 
-// QueryList joins the passed fields into a string that can be used when selecting the fields to return
-// or specifying fields in an update or insert.
-func QueryList(fields []interface{}) string {
-	strs := make([]string, len(fields))
-	for pos, field := range fields {
-		strs[pos] = field.(string)
-	}
-	return strings.Join(strs, ", ")
-}
-
-// GetM2MTableName returns a consistent table name for a many-to-many relationship between two tables. No
-// matter what order the fields are passed in, the resulting table name will always be consistent.
-func GetM2MTableName(t1, t2 sqlTableNamer) string {
-	name1 := t1.GetSQLTableName()
-	name2 := t2.GetSQLTableName()
-	if name2 < name1 {
-		name1, name2 = name2, name1
-	}
-	return fmt.Sprintf("%s_%s", name1, name2)
-}
-
-// GetM2MAbsoluteColumnName returns the column name for the supplied field in a many-to-many relationship table,
-// including the table name. The field belongs to the first sqlTableNamer, the second sqlTableNamer is the other
-// table in the many-to-many relationship.
-func GetM2MAbsoluteColumnName(t sqlTableNamer, field string, t2 sqlTableNamer) string {
-	return fmt.Sprintf("`%s`.%s", GetM2MTableName(t, t2), GetM2MQuotedColumnName(t, field))
-}
-
-// GetM2MColumnName returns the column name for the supplied field in a many-to-many relationship table.
-func GetM2MColumnName(t sqlTableNamer, field string) string {
-	return fmt.Sprintf("%s_%s", t.GetSQLTableName(), GetUnquotedColumn(t, field))
-}
-
-// GetM2MQuotedColumnName returns the column name for the supplied field in a many-to-many relationship table,
-// including the quote marks around the column name.
-func GetM2MQuotedColumnName(t sqlTableNamer, field string) string {
-	return fmt.Sprintf("`%s`", GetM2MColumnName(t, field))
-}
-
-// GetM2MFields returns a slice of the columns that should be in a table that maps the many-to-many relationship of
-// the types supplied, with their corresponding values. The field parameters specify the primary keys used in
-// the relationship table to map to that type.
-func GetM2MFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{}) {
-	type1 := reflect.TypeOf(t1)
-	type2 := reflect.TypeOf(t2)
-	value1 := reflect.ValueOf(t1)
-	value2 := reflect.ValueOf(t2)
-	kind1 := value1.Kind()
-	kind2 := value2.Kind()
-	for kind1 == reflect.Interface || kind1 == reflect.Ptr {
-		value1 = value1.Elem()
-		type1 = value1.Type()
-		kind1 = value1.Kind()
-	}
-	for kind2 == reflect.Interface || kind2 == reflect.Ptr {
-		value2 = value2.Elem()
-		type2 = value2.Type()
-		kind2 = value2.Kind()
-	}
-	if kind1 != reflect.Struct {
-		panic("Can't get fields of " + type1.Name())
-	}
-	if kind2 != reflect.Struct {
-		panic("Can't get fields of " + type2.Name())
-	}
-	v1 := value1.FieldByName(field1)
-	v2 := value2.FieldByName(field2)
-	if v1 == *new(reflect.Value) {
-		panic(`No "` + field1 + `" field found in ` + type1.Name())
-	}
-	if v2 == *new(reflect.Value) {
-		panic(`No "` + field2 + `" field found in ` + type2.Name())
-	}
-	column1 := GetM2MColumnName(t1, field1)
-	column2 := GetM2MColumnName(t2, field2)
-	if column2 < column1 {
-		type1, type2 = type2, type1
-		value1, value2 = value2, value1
-		kind1, kind2 = kind2, kind1
-		v1, v2 = v2, v1
-		column1, column2 = column2, column1
-	}
-	columns = append(columns, column1, column2)
-	values = append(values, v1.Interface(), v2.Interface())
-	return
-}
-
-// GetM2MQuotedFields wraps the fields returned by GetM2MFields in quotes.
-func GetM2MQuotedFields(t1 sqlTableNamer, field1 string, t2 sqlTableNamer, field2 string) (columns, values []interface{}) {
-	columns, values = GetM2MFields(t1, field1, t2, field2)
-	for pos, column := range columns {
-		columns[pos] = "`" + column.(string) + "`"
-	}
-	return
-}
-
+// Scannable defines a type that can insert the results of a Query into
+// the SQLTableNamer a Query was built from, and can list off the column
+// names, in order, that those results represent.
 type Scannable interface {
-	Scan(dest ...interface{}) error
+	Scan(dst ...interface{}) error
+	Columns() ([]string, error)
 }
 
-func Unmarshal(s Scannable, dst interface{}) error {
+type pointer struct {
+	addr      interface{}
+	column    string
+	sortOrder int
+}
+
+type pointers []pointer
+
+func (p pointers) Len() int { return len(p) }
+
+func (p pointers) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+
+func (p pointers) Less(i, j int) bool { return p[i].sortOrder < p[j].sortOrder }
+
+func getColumnAddrs(s Scannable, in []pointer) ([]interface{}, error) {
+	columns, err := s.Columns()
+	if err != nil {
+		return nil, err
+	}
+	var results pointers
+	for _, pointer := range in {
+		for pos, column := range columns {
+			if column == pointer.column {
+				pointer.sortOrder = pos
+				results = append(results, pointer)
+				break
+			}
+		}
+	}
+	sort.Sort(results)
+	i := make([]interface{}, 0, len(results))
+	for _, res := range results {
+		i = append(i, res.addr)
+	}
+	return i, nil
+}
+
+// Unmarshal reads the Scannable `s` into the variable at `d`, and returns an
+// error if it is unable to. If there are more values than `d` has properties
+// associated with columns, `additional` can be supplied to catch the extra values.
+// The variables in `additional` must be a compatible type with and be in the same
+// order as the columns of `s`.
+func Unmarshal(s Scannable, dst interface{}, additional ...interface{}) error {
 	t := reflect.TypeOf(dst)
 	v := reflect.ValueOf(dst)
 	k := t.Kind()
@@ -333,22 +270,28 @@ func Unmarshal(s Scannable, dst interface{}) error {
 	if k != reflect.Struct {
 		return s.Scan(dst)
 	}
-	pointers := []interface{}{}
+	props := []pointer{}
 	for i := 0; i < t.NumField(); i++ {
 		if t.Field(i).PkgPath != "" {
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(t.Field(i), true)
-		if field == "" {
-			field = getFieldExpression(t.Field(i))
-		}
+		field := getFieldColumn(t.Field(i))
 		if field == "" {
 			continue
 		}
 
 		// Get the value of the field
-		pointers = append(pointers, v.Field(i).Addr().Interface())
+		props = append(props, pointer{
+			addr:   v.Field(i).Addr().Interface(),
+			column: field,
+		})
 	}
-	return s.Scan(pointers...)
+
+	addrs, err := getColumnAddrs(s, props)
+	if err != nil {
+		return err
+	}
+	addrs = append(addrs, additional...)
+	return s.Scan(addrs...)
 }
