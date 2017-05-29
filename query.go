@@ -63,18 +63,15 @@ func New(query string) *Query {
 // Insert returns a Query instance containing SQL that will insert the passed `values` into
 // the database. All `values` will be inserted into the same table, so invalid SQL will be
 // generated if all `values` are not the same type.
-func Insert(obj SQLTableNamer, values ...SQLTableNamer) *Query {
-	inserts := make([]SQLTableNamer, 0, len(values)+1)
-	inserts = append(inserts, obj)
-	inserts = append(inserts, values...)
-	columns := Columns(obj)
-	query := New("INSERT INTO " + Table(obj) + " (" + columns.String() + ") VALUES")
+func Insert(values ...SQLTableNamer) *Query {
+	columns := Columns(values[0])
+	query := New("INSERT INTO " + Table(values[0]) + " (" + columns.String() + ") VALUES")
 
-	for _, v := range inserts {
+	for _, v := range values {
 		columnValues := ColumnValues(v)
 		query.Expression("("+Placeholders(len(columnValues))+")", columnValues...)
 	}
-	return query.Flush(" ")
+	return query.Flush(", ")
 }
 
 // ErrWrongNumberArgs is returned when you’ve generated a Query with a certain number of
