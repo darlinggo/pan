@@ -190,7 +190,7 @@ func TestUnmarshal(t *testing.T) {
 		t.Error(err)
 	}
 	q := Insert(dummy)
-	mysql, err := q.MySQLString()
+	mysql, err := q.SQLiteString()
 	if err != nil {
 		t.Error(err)
 	}

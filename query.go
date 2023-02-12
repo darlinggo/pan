@@ -33,7 +33,7 @@ var (
 // goroutines, you need to coordinate that access yourself.
 type Query struct {
 	sql           string
-	args          []interface{}
+	args          []any
 	expressions   []string
 	includesWhere bool
 	includesOrder bool
@@ -56,14 +56,13 @@ type Flag int
 func New(query string) *Query {
 	return &Query{
 		sql:  query,
-		args: []interface{}{},
+		args: []any{},
 	}
 }
 
 // Insert returns a Query instance containing SQL that will insert the passed `values` into
-// the database. All `values` will be inserted into the same table, so invalid SQL will be
-// generated if all `values` are not the same type.
-func Insert(values ...SQLTableNamer) *Query {
+// the database.
+func Insert[Type SQLTableNamer](values ...Type) *Query {
 	columns := Columns(values[0])
 	query := New("INSERT INTO " + Table(values[0]) + " (" + columns.String() + ") VALUES")
 
@@ -106,7 +105,7 @@ func (q *Query) String() string {
 	var res string
 	toCheck := q.sql
 	for i := strings.Index(toCheck, "?"); i >= 0; argPos++ {
-		var arg interface{}
+		var arg any
 		arg = "!{MISSING}"
 		if len(q.args) > argPos {
 			arg = q.args[argPos]
@@ -126,6 +125,21 @@ func (q *Query) String() string {
 // left in the buffer (meaning the Flush method wasn't called) an ErrNeedsFlush error
 // will be returned.
 func (q *Query) MySQLString() (string, error) {
+	if len(q.expressions) != 0 {
+		return "", ErrNeedsFlush
+	}
+	if err := q.checkCounts(); err != nil {
+		return "", err
+	}
+	return q.sql + ";", nil
+}
+
+// SQLiteString returns a SQL string that can be passed to SQLite to execute
+// your query. If the number of placeholders do not match the number of
+// arguments provided to your Query, an ErrWrongNumberArgs error will be
+// returned. If there are still expressions left in the buffer (meaning the
+// Flush method wasn't called) an ErrNeedsFlush error will be returned.
+func (q *Query) SQLiteString() (string, error) {
 	if len(q.expressions) != 0 {
 		return "", ErrNeedsFlush
 	}
@@ -176,7 +190,7 @@ func (q *Query) Flush(join string) *Query {
 }
 
 // Expression adds a raw string and optional values to the Query’s buffer.
-func (q *Query) Expression(key string, values ...interface{}) *Query {
+func (q *Query) Expression(key string, values ...any) *Query {
 	q.expressions = append(q.expressions, key)
 	q.args = append(q.args, values...)
 	return q
@@ -202,7 +216,7 @@ func (q *Query) Where() *Query {
 // determined by finding the column name for the passed property on the passed SQLTableNamer.
 // The passed property must be a string that matches, identically, the property name; if it
 // does not, it will panic.
-func (q *Query) Comparison(obj SQLTableNamer, property, operator string, value interface{}) *Query {
+func (q *Query) Comparison(obj SQLTableNamer, property, operator string, value any) *Query {
 	return q.Expression(Column(obj, property)+" "+operator+" ?", value)
 }
 
@@ -210,14 +224,14 @@ func (q *Query) Comparison(obj SQLTableNamer, property, operator string, value i
 // `values` are the variables to match against, and `obj` and `property` are used to determine
 // the column. `property` must exactly match the name of a property on `obj`, or the call will
 // panic.
-func (q *Query) In(obj SQLTableNamer, property string, values ...interface{}) *Query {
+func (q *Query) In(obj SQLTableNamer, property string, values ...any) *Query {
 	return q.Expression(Column(obj, property)+" IN("+Placeholders(len(values))+")", values...)
 }
 
 // Assign adds an expression to the Query’s buffer in the form of "column = ?", and adds `value`
 // to the arguments for this query. `obj` and `property` are used to determine the column.
 // `property` must exactly match the name of a property on `obj`, or the call will panic.
-func (q *Query) Assign(obj SQLTableNamer, property string, value interface{}) *Query {
+func (q *Query) Assign(obj SQLTableNamer, property string, value any) *Query {
 	return q.Expression(Column(obj, property)+" = ?", value)
 }
 
@@ -258,6 +272,6 @@ func (q *Query) Offset(offset int64) *Query {
 //
 // Note that Args returns its internal slice; you should copy the returned slice over before modifying
 // it.
-func (q *Query) Args() []interface{} {
+func (q *Query) Args() []any {
 	return q.args
 }
