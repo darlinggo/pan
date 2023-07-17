@@ -37,6 +37,7 @@ type Query struct {
 	expressions   []string
 	includesWhere bool
 	includesOrder bool
+	parent        *Query
 }
 
 // ColumnList represents a set of columns.
@@ -172,6 +173,38 @@ func (q *Query) PostgreSQLString() (string, error) {
 	}
 	res += toCheck
 	return res + ";", nil
+}
+
+// SubQuery starts a Query with a new buffer, so it can be flushed without
+// affecting the outer Query's buffer of expressions.
+//
+// Once a SubQuery has been flushed, it should have its AppendToParent method
+// called, which sets the entire SubQuery as a single expression on its parent
+// Query.
+func (q *Query) SubQuery(query string) *Query {
+	return &Query{
+		sql:    query,
+		args:   []any{},
+		parent: q,
+	}
+}
+
+// AppendToParent sets the entire Query as a single expression on its parent
+// Query. It should only be called on Querys created by calling SubQuery;
+// calling it on a Query that isn't a SubQuery will panic.
+//
+// It returns the parent of the Query.
+func (q *Query) AppendToParent() *Query {
+	if q.parent == nil {
+		panic("can't call AppendToParent on a Query that wasn't created using Query.SubQuery")
+	}
+	if len(q.expressions) > 0 {
+		panic(ErrNeedsFlush)
+	}
+	if err := q.checkCounts(); err != nil {
+		panic(err)
+	}
+	return q.parent.Expression(q.sql, q.args...)
 }
 
 // Flush flushes the expressions in the Query’s buffer, adding them to the SQL string
