@@ -14,21 +14,21 @@ type testPost struct {
 	Modified *time.Time
 }
 
-func (t testPost) GetSQLTableName() string {
+func (testPost) GetSQLTableName() string {
 	return "test_data"
 }
 
 func init() {
-	p := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
-	sqlTable[Insert(p)] = queryResult{
+	post := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
+	sqlTable[Insert(post)] = queryResult{
 		mysql:    "INSERT INTO test_data (id, title, author_id, body, created, modified) VALUES (?, ?, ?, ?, ?, ?);",
 		postgres: "INSERT INTO test_data (id, title, author_id, body, created, modified) VALUES ($1, $2, $3, $4, $5, $6);",
 	}
-	sqlTable[New("UPDATE "+Table(p)+" SET").Assign(p, "Title", p.Title).Assign(p, "Author", p.Author).Flush(", ").Where().Comparison(p, "ID", "=", p.ID).Flush(" ")] = queryResult{
+	sqlTable[New("UPDATE "+Table(post)+" SET").Assign(post, "Title", post.Title).Assign(post, "Author", post.Author).Flush(", ").Where().Comparison(post, "ID", "=", post.ID).Flush(" ")] = queryResult{
 		mysql:    "UPDATE test_data SET title = ?, author_id = ? WHERE id = ?;",
 		postgres: "UPDATE test_data SET title = $1, author_id = $2 WHERE id = $3;",
 	}
-	sqlTable[New("SELECT "+Columns(p).String()+" FROM "+Table(p)).Where().Expression(Column(p, "Created")+" > (SELECT "+Column(p, "Created")+" FROM "+Table(p)+" WHERE "+Column(p, "ID")+" = ?)", 123).Where().OrderByDesc(Column(p, "Created")).Limit(19).Flush(" ")] = queryResult{
+	sqlTable[New("SELECT "+Columns(post).String()+" FROM "+Table(post)).Where().Expression(Column(post, "Created")+" > (SELECT "+Column(post, "Created")+" FROM "+Table(post)+" WHERE "+Column(post, "ID")+" = ?)", 123).Where().OrderByDesc(Column(post, "Created")).Limit(19).Flush(" ")] = queryResult{
 		postgres: "SELECT id, title, author_id, body, created, modified FROM test_data WHERE created > (SELECT created FROM test_data WHERE id = $1) ORDER BY created DESC LIMIT $2;",
 		mysql:    "SELECT id, title, author_id, body, created, modified FROM test_data WHERE created > (SELECT created FROM test_data WHERE id = ?) ORDER BY created DESC LIMIT ?;",
 	}
@@ -44,7 +44,7 @@ var sqlTable = map[*Query]queryResult{
 func TestSQLTable(t *testing.T) {
 	t.Parallel()
 	for query, expectation := range sqlTable {
-		t.Logf(query.String())
+		t.Log(query.String())
 		mysql, err := query.MySQLString()
 		if err != nil {
 			t.Errorf("Unexpected error: %+v\n", err)
@@ -63,15 +63,15 @@ func TestSQLTable(t *testing.T) {
 }
 
 func BenchmarkInsertGeneration(b *testing.B) {
-	p := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
-	for i := 0; i < b.N; i++ {
-		Insert(p)
+	post := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
+	for b.Loop() {
+		Insert(post)
 	}
 }
 
 func BenchmarkQueryGeneration(b *testing.B) {
-	p := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
-	for i := 0; i < b.N; i++ {
-		New("SELECT "+Columns(p).String()+" FROM "+Table(p)).Where().Comparison(p, "ID", "=", p.ID).Expression("OR").In(p, "ID", 123, 456, 789, 101112, 131415).OrderBy(Column(p, "Created")).Limit(10).Flush(" ")
+	post := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
+	for b.Loop() {
+		New("SELECT "+Columns(post).String()+" FROM "+Table(post)).Where().Comparison(post, "ID", "=", post.ID).Expression("OR").In(post, "ID", 123, 456, 789, 101112, 131415).OrderBy(Column(post, "Created")).Limit(10).Flush(" ")
 	}
 }

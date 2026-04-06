@@ -3,6 +3,7 @@ package pan
 import (
 	"database/sql"
 	"os"
+	"path/filepath"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -12,20 +13,12 @@ type testType struct {
 	myInt          int
 	MyTaggedInt    int `sql_column:"tagged_int"`
 	MyString       string
-	myTaggedString string `sql_column:"tagged_string"`
+	myTaggedString string `sql_column:"tagged_string"` //nolint:revive // purposefully tagging unexported field to make sure it's not surfaced
 	OmittedColumn  string `sql_column:"-"`
 }
 
-func (t testType) GetSQLTableName() string {
+func (testType) GetSQLTableName() string {
 	return "test_types"
-}
-
-type testType2 struct {
-	ID string
-}
-
-func (t testType2) GetSQLTableName() string {
-	return "more_tests"
 }
 
 func TestReflectedProperties(t *testing.T) {
@@ -48,10 +41,10 @@ func TestReflectedProperties(t *testing.T) {
 		if column != "test_types.tagged_int" && column != "test_types.my_string" {
 			t.Errorf("Unknown column found: %v", column)
 		}
-		if column == "test_types.tagged_int" && values[pos].(int) != 2 {
+		if val, ok := values[pos].(int); column == "test_types.tagged_int" && (!ok || val != 2) {
 			t.Errorf("Expected tagged_int to be %d, got %v", 2, values[pos])
 		}
-		if column == "test_types.my_string" && values[pos].(string) != "hello" {
+		if val, ok := values[pos].(string); column == "test_types.my_string" && (!ok || val != "hello") {
 			t.Errorf("Expected my_string to be %s, got %v", "hello", values[pos])
 		}
 	}
@@ -100,7 +93,7 @@ func TestCamelToSnake(t *testing.T) {
 
 type invalidSQLFieldReflector string
 
-func (i invalidSQLFieldReflector) GetSQLTableName() string {
+func (invalidSQLFieldReflector) GetSQLTableName() string {
 	return "invalid_reflection_table"
 }
 
@@ -127,23 +120,23 @@ func TestInterfaceOrPointerFieldReflection(t *testing.T) {
 		t.Errorf("Expected %d values, but got %v", len(values), values)
 	}
 
-	var i SQLTableNamer
-	i = testType{}
-	columns = Columns(i)
+	var namer SQLTableNamer
+	namer = testType{}
+	columns = Columns(namer)
 	if len(columns) != 2 {
 		t.Errorf("Expected %d columns, but got %v", len(columns), columns)
 	}
-	values = ColumnValues(i)
+	values = ColumnValues(namer)
 	if len(values) != 2 {
 		t.Errorf("Expected %d values, but got %v", len(values), values)
 	}
 
-	i = &testType{}
-	columns = Columns(i)
+	namer = &testType{}
+	columns = Columns(namer)
 	if len(columns) != 2 {
 		t.Errorf("Expected %d columns, but got %v", len(columns), columns)
 	}
-	values = ColumnValues(i)
+	values = ColumnValues(namer)
 	if len(values) != 2 {
 		t.Errorf("Expected %d values, but got %v", len(values), values)
 	}
@@ -169,13 +162,28 @@ func TestOmittedColumn(t *testing.T) {
 }
 
 func TestUnmarshal(t *testing.T) {
-	os.Remove("./test.db")
+	t.Parallel()
 
-	db, err := sql.Open("sqlite3", "./test.db")
+	ctx := t.Context()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	t.Cleanup(func() {
+		err := os.Remove(dbPath)
+		if err != nil {
+			t.Log("Error cleaning up after test:", err)
+		}
+	})
+
+	conn, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		t.Error(err)
 	}
-	defer db.Close()
+	defer func() {
+		closeErr := conn.Close()
+		if closeErr != nil {
+			t.Log("error closing connection:", closeErr)
+		}
+	}()
 
 	dummy := testType{
 		myInt:          1,
@@ -185,29 +193,44 @@ func TestUnmarshal(t *testing.T) {
 		OmittedColumn:  "hide",
 	}
 	expectation := testType{}
-	_, err = db.Exec("create table test_types (tagged_int integer, my_string varchar);")
+	_, err = conn.ExecContext(ctx, "create table test_types (tagged_int integer, my_string varchar);")
 	if err != nil {
 		t.Error(err)
 	}
-	q := Insert(dummy)
-	mysql, err := q.SQLiteString()
+	query := Insert(dummy)
+	mysql, err := query.SQLiteString()
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = db.Exec(mysql, q.Args()...)
+	_, err = conn.ExecContext(ctx, mysql, query.Args()...)
 	if err != nil {
-		t.Log(q.String())
+		t.Log(query.String())
 		t.Error(err)
 	}
-	rows, err := db.Query("SELECT " + Columns(dummy).String() + " FROM test_types;")
+	selectQuery := New("SELECT " + Columns(dummy).String() + " FROM " + Table(dummy))
+	selectString, err := selectQuery.SQLiteString()
+	if err != nil {
+		t.Log(query.String())
+		t.Error(err)
+	}
+	rows, err := conn.QueryContext(ctx, selectString)
 	if err != nil {
 		t.Error(err)
 	}
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil {
+			t.Error(closeErr)
+		}
+	}()
 	for rows.Next() {
 		err = Unmarshal(rows, &expectation)
 		if err != nil {
 			t.Error(err)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Error(err)
 	}
 	if expectation.MyTaggedInt != dummy.MyTaggedInt {
 		t.Errorf("Expected MyTaggedInt to be %d, was %d.", dummy.MyTaggedInt, expectation.MyTaggedInt)
@@ -215,5 +238,4 @@ func TestUnmarshal(t *testing.T) {
 	if expectation.MyString != dummy.MyString {
 		t.Errorf("Expected MyString to be %s, was %s.", dummy.MyString, expectation.MyString)
 	}
-	os.Remove("./test.db")
 }

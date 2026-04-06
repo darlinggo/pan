@@ -74,17 +74,17 @@ func Insert[Type SQLTableNamer](values ...Type) *Query {
 	return query.Flush(", ")
 }
 
-// ErrWrongNumberArgs is returned when you’ve generated a Query with a certain number of
+// WrongNumberArgsError is returned when you’ve generated a Query with a certain number of
 // placeholders, but supplied a different number of arguments. The NumExpected property
 // holds the number of placeholders in the Query, and the NumFound property holds the
 // number of arguments supplied.
-type ErrWrongNumberArgs struct {
+type WrongNumberArgsError struct {
 	NumExpected int
 	NumFound    int
 }
 
 // Error fills the error interface.
-func (e ErrWrongNumberArgs) Error() string {
+func (e WrongNumberArgsError) Error() string {
 	return fmt.Sprintf("Expected %d arguments, got %d.", e.NumExpected, e.NumFound)
 }
 
@@ -92,7 +92,7 @@ func (q *Query) checkCounts() error {
 	placeholders := strings.Count(q.sql, "?")
 	args := len(q.args)
 	if placeholders != args {
-		return ErrWrongNumberArgs{NumExpected: placeholders, NumFound: args}
+		return WrongNumberArgsError{NumExpected: placeholders, NumFound: args}
 	}
 	return nil
 }
@@ -105,16 +105,16 @@ func (q *Query) String() string {
 	var argPos int
 	var res string
 	toCheck := q.sql
-	for i := strings.Index(toCheck, "?"); i >= 0; argPos++ {
+	for charIndex := strings.Index(toCheck, "?"); charIndex >= 0; argPos++ {
 		var arg any
 		arg = "!{MISSING}"
 		if len(q.args) > argPos {
 			arg = q.args[argPos]
 		}
-		res += toCheck[:i]
+		res += toCheck[:charIndex]
 		res += fmt.Sprintf("%v", arg)
-		toCheck = toCheck[i+1:]
-		i = strings.Index(toCheck, "?")
+		toCheck = toCheck[charIndex+1:]
+		charIndex = strings.Index(toCheck, "?")
 	}
 	res += toCheck
 	return res
@@ -269,7 +269,7 @@ func (q *Query) Assign(obj SQLTableNamer, property string, value any) *Query {
 	return q.Expression(Column(obj, property)+" = ?", value)
 }
 
-func (q *Query) orderBy(orderClause, dir string) *Query {
+func (q *Query) orderByWithDir(orderClause, dir string) *Query {
 	exp := ", "
 	if !q.includesOrder {
 		exp = "ORDER BY "
@@ -281,12 +281,12 @@ func (q *Query) orderBy(orderClause, dir string) *Query {
 
 // OrderBy adds an expression to the Query’s buffer in the form of "ORDER BY column".
 func (q *Query) OrderBy(column string) *Query {
-	return q.orderBy(column, "")
+	return q.orderByWithDir(column, "")
 }
 
 // OrderByDesc adds an expression to the Query’s buffer in the form of "ORDER BY column DESC".
 func (q *Query) OrderByDesc(column string) *Query {
-	return q.orderBy(column, " DESC")
+	return q.orderByWithDir(column, " DESC")
 }
 
 // Limit adds an expression to the Query’s buffer in the form of "LIMIT ?", and adds `limit` as

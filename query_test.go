@@ -1,6 +1,7 @@
 package pan
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -17,7 +18,7 @@ type queryResult struct {
 }
 
 var queryTests = []queryTest{
-	queryTest{
+	{
 		ExpectedResult: queryResult{
 			postgres: "This query expects $1 one arg;",
 			mysql:    "This query expects ? one arg;",
@@ -25,66 +26,66 @@ var queryTests = []queryTest{
 		},
 		Query: &Query{
 			sql:  "This query expects ? one arg",
-			args: []interface{}{0},
+			args: []any{0},
 		},
 	},
-	queryTest{
+	{
 		ExpectedResult: queryResult{
 			postgres: "",
 			mysql:    "",
-			err: ErrWrongNumberArgs{
+			err: WrongNumberArgsError{
 				NumExpected: 1,
 				NumFound:    0,
 			},
 		},
 		Query: &Query{
 			sql:  "This query expects ? one arg but won't get it;",
-			args: []interface{}{},
+			args: []any{},
 		},
 	},
-	queryTest{
+	{
 		ExpectedResult: queryResult{
 			postgres: "",
 			mysql:    "",
-			err: ErrWrongNumberArgs{
+			err: WrongNumberArgsError{
 				NumExpected: 0,
 				NumFound:    1,
 			},
 		},
 		Query: &Query{
 			sql:  "This query expects no arguments but will get one;",
-			args: []interface{}{0},
+			args: []any{0},
 		},
 	},
-	queryTest{
+	{
 		ExpectedResult: queryResult{
 			postgres: "",
 			mysql:    "",
-			err: ErrWrongNumberArgs{
+			err: WrongNumberArgsError{
 				NumExpected: 2,
 				NumFound:    1,
 			},
 		},
 		Query: &Query{
 			sql:  "This query expects ? two args ? but will get one;",
-			args: []interface{}{0},
+			args: []any{0},
 		},
 	},
-	queryTest{
+	{
 		ExpectedResult: queryResult{
 			postgres: "",
 			mysql:    "",
-			err: ErrWrongNumberArgs{
+			err: WrongNumberArgsError{
 				NumExpected: 2,
 				NumFound:    3,
 			},
 		},
 		Query: &Query{
 			sql:  "This query expects ? ? two args but will get three;",
-			args: []interface{}{0, 1, 2},
+			args: []any{0, 1, 2},
 		},
 	},
-	queryTest{
+	{
 		ExpectedResult: queryResult{
 			postgres: "Unicode test 世 $1;",
 			mysql:    "Unicode test 世 ?;",
@@ -92,10 +93,10 @@ var queryTests = []queryTest{
 		},
 		Query: &Query{
 			sql:  "Unicode test 世 ?",
-			args: []interface{}{0},
+			args: []any{0},
 		},
 	},
-	queryTest{
+	{
 		ExpectedResult: queryResult{
 			postgres: "Unicode boundary test $1 " + string(rune(0x80)) + ";",
 			mysql:    "Unicode boundary test ? " + string(rune(0x80)) + ";",
@@ -103,26 +104,26 @@ var queryTests = []queryTest{
 		},
 		Query: &Query{
 			sql:  "Unicode boundary test ? " + string(rune(0x80)),
-			args: []interface{}{0},
+			args: []any{0},
 		},
 	},
-	queryTest{
+	{
 		ExpectedResult: queryResult{
 			err: ErrNeedsFlush,
 		},
 		Query: &Query{
 			sql:         "SELECT * FROM mytable WHERE",
-			args:        []interface{}{0},
+			args:        []any{0},
 			expressions: []string{"this = ?"},
 		},
 	},
 }
 
 func init() {
-	postgres := "lots of args"
-	mysql := "lots of args"
 	sql := "lots of args"
-	args := []interface{}{}
+	postgres := sql
+	mysql := sql
+	args := []any{}
 	for i := 1; i < 1001; i++ {
 		sql += " ?"
 		mysql += " ?"
@@ -173,14 +174,15 @@ func TestErrWrongNumberArgs(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected error.")
 	}
-	if e, ok := err.(ErrWrongNumberArgs); !ok {
+	var wrongNumArgs WrongNumberArgsError
+	if ok := errors.As(err, &wrongNumArgs); !ok {
 		t.Errorf("Error was not an ErrWrongNumberArgs.")
 	} else {
-		if e.NumExpected != 1 {
-			t.Errorf("Expected %d expectations, got %d", 1, e.NumExpected)
+		if wrongNumArgs.NumExpected != 1 {
+			t.Errorf("Expected %d expectations, got %d", 1, wrongNumArgs.NumExpected)
 		}
-		if e.NumFound != 3 {
-			t.Errorf("Expected %d args found, got %d", 3, e.NumFound)
+		if wrongNumArgs.NumFound != 3 {
+			t.Errorf("Expected %d args found, got %d", 3, wrongNumArgs.NumFound)
 		}
 	}
 	if err.Error() != "Expected 1 arguments, got 3." {
@@ -205,13 +207,13 @@ func TestRepeatedOrder(t *testing.T) {
 
 func TestOffset(t *testing.T) {
 	t.Parallel()
-	q := New("SELECT * FROM test_data")
-	q.Offset(10).Flush(" ")
-	mysql, err := q.MySQLString()
+	query := New("SELECT * FROM test_data")
+	query.Offset(10).Flush(" ")
+	mysql, err := query.MySQLString()
 	if err != nil {
 		t.Errorf("Unexpected error: %+v\n", err)
 	}
-	postgres, err := q.PostgreSQLString()
+	postgres, err := query.PostgreSQLString()
 	if err != nil {
 		t.Errorf("Unexpected error: %+v\n", err)
 	}
@@ -227,25 +229,35 @@ func TestOffset(t *testing.T) {
 }
 
 func BenchmarkMySQLString(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		test := queryTests[b.N%len(queryTests)]
 		b.StartTimer()
-		test.Query.MySQLString()
+		_, err := test.Query.MySQLString()
+		b.StopTimer()
+		if err != nil {
+			b.Error(err)
+		}
+		b.StartTimer()
 	}
 }
 
 func BenchmarkPostgreSQLString(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		test := queryTests[b.N%len(queryTests)]
 		b.StartTimer()
-		test.Query.PostgreSQLString()
+		_, err := test.Query.PostgreSQLString()
+		b.StopTimer()
+		if err != nil {
+			b.Error(err)
+		}
+		b.StartTimer()
 	}
 }
 
 func BenchmarkQueryString(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		test := queryTests[b.N%len(queryTests)]
 		b.StartTimer()

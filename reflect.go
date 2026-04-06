@@ -3,6 +3,7 @@ package pan
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -31,55 +32,48 @@ func validTag(s string) bool {
 	return true
 }
 
-func toSnake(s string) string {
-	if s == "" {
+func toSnake(input string) string {
+	if input == "" {
 		return ""
 	}
 	snake := ""
 	prevWasLower := false
-	buf := make([]byte, 4)
-	for _, c := range s {
-		if !unicode.IsLetter(c) && !unicode.IsDigit(c) {
+	buf := make([]byte, 4) //nolint:mnd // unicode characters are 4 bytes
+	for _, character := range input {
+		if !unicode.IsLetter(character) && !unicode.IsDigit(character) {
 			continue
 		}
-		if unicode.IsLower(c) {
+		if unicode.IsLower(character) {
 			prevWasLower = true
-		} else if unicode.IsUpper(c) {
-			c = unicode.ToLower(c)
+		} else if unicode.IsUpper(character) {
+			character = unicode.ToLower(character)
 			if prevWasLower {
 				snake += "_"
 			}
 			prevWasLower = false
 		}
 
-		n := utf8.EncodeRune(buf, c)
+		n := utf8.EncodeRune(buf, character)
 		snake += string(buf[0:n])
 	}
 	return snake
 }
 
-func getFieldColumn(f reflect.StructField) string {
+func getFieldColumn(field reflect.StructField) string {
 	// Get the SQL column name, from the tag or infer it
-	field := f.Tag.Get(tagName)
-	if field == "-" {
+	columnName := field.Tag.Get(tagName)
+	if columnName == "-" {
 		return ""
 	}
-	if field == "" || !validTag(field) {
-		field = toSnake(f.Name)
+	if columnName == "" || !validTag(columnName) {
+		columnName = toSnake(field.Name)
 	}
-	return field
+	return columnName
 }
 
 func hasFlags(list []Flag, passed ...Flag) bool {
 	for _, candidate := range passed {
-		var found bool
-		for _, f := range list {
-			if f == candidate {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(list, candidate) {
 			return false
 		}
 	}
@@ -107,31 +101,31 @@ func decorateColumns(columns []string, table string, flags ...Flag) []string {
 }
 
 // if needsValues is false, we'll attempt to use the cache and `values` will be nil
-func readStruct(s SQLTableNamer, needsValues bool, flags ...Flag) (columns []string, values []interface{}) {
-	typ := fmt.Sprintf("%T", s)
+func readStruct(namer SQLTableNamer, needsValues bool, flags ...Flag) (columns []string, values []any) {
+	typ := fmt.Sprintf("%T", namer)
 	structReadMutex.RLock()
 	if cached, ok := structReadCache[typ]; !needsValues && ok {
 		structReadMutex.RUnlock()
-		return decorateColumns(cached, s.GetSQLTableName(), flags...), nil
+		return decorateColumns(cached, namer.GetSQLTableName(), flags...), nil
 	}
 	structReadMutex.RUnlock()
-	v := reflect.ValueOf(s)
-	t := reflect.TypeOf(s)
-	k := t.Kind()
-	for k == reflect.Interface || k == reflect.Ptr {
-		v = v.Elem()
-		t = v.Type()
-		k = t.Kind()
+	namerValue := reflect.ValueOf(namer)
+	namerType := reflect.TypeOf(namer)
+	namerKind := namerType.Kind()
+	for namerKind == reflect.Interface || namerKind == reflect.Pointer {
+		namerValue = namerValue.Elem()
+		namerType = namerValue.Type()
+		namerKind = namerType.Kind()
 	}
-	if k != reflect.Struct {
-		return
+	if namerKind != reflect.Struct {
+		return nil, nil
 	}
-	for i := 0; i < t.NumField(); i++ {
-		if t.Field(i).PkgPath != "" {
+	for fieldIndex := range namerType.NumField() {
+		if namerType.Field(fieldIndex).PkgPath != "" {
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(t.Field(i))
+		field := getFieldColumn(namerType.Field(fieldIndex))
 		if field == "" {
 			continue
 		}
@@ -139,7 +133,7 @@ func readStruct(s SQLTableNamer, needsValues bool, flags ...Flag) (columns []str
 
 		if needsValues {
 			// Get the value of the field
-			value := v.Field(i).Interface()
+			value := namerValue.Field(fieldIndex).Interface()
 			values = append(values, value)
 		}
 	}
@@ -147,7 +141,7 @@ func readStruct(s SQLTableNamer, needsValues bool, flags ...Flag) (columns []str
 	structReadMutex.Lock()
 	structReadCache[typ] = columns
 	structReadMutex.Unlock()
-	return decorateColumns(columns, s.GetSQLTableName(), flags...), values
+	return decorateColumns(columns, namer.GetSQLTableName(), flags...), values
 }
 
 // Columns returns a ColumnList containing the names of the columns
@@ -160,27 +154,27 @@ func Columns(s SQLTableNamer, flags ...Flag) ColumnList {
 // Column returns the name of the column that `property` maps to for `s`.
 // `property` must be the exact name of a property on `s`, or Column will
 // panic.
-func Column(s SQLTableNamer, property string, flags ...Flag) string {
-	t := reflect.TypeOf(s)
-	k := t.Kind()
-	for k == reflect.Interface || k == reflect.Ptr {
-		t = reflect.ValueOf(s).Elem().Type()
-		k = t.Kind()
+func Column(namer SQLTableNamer, property string, flags ...Flag) string {
+	namerType := reflect.TypeOf(namer)
+	namerKind := namerType.Kind()
+	for namerKind == reflect.Interface || namerKind == reflect.Pointer {
+		namerType = reflect.ValueOf(namer).Elem().Type()
+		namerKind = namerType.Kind()
 	}
-	if k != reflect.Struct {
+	if namerKind != reflect.Struct {
 		return ""
 	}
-	field, ok := t.FieldByName(property)
+	field, ok := namerType.FieldByName(property)
 	if !ok {
 		panic("Field not found in type: " + property)
 	}
-	columns := decorateColumns([]string{getFieldColumn(field)}, s.GetSQLTableName(), flags...)
+	columns := decorateColumns([]string{getFieldColumn(field)}, namer.GetSQLTableName(), flags...)
 	return columns[0]
 }
 
 // ColumnValues returns the values in `s` for each column in `s`, in the
 // same order `Columns` returns the names.
-func ColumnValues(s SQLTableNamer) []interface{} {
+func ColumnValues(s SQLTableNamer) []any {
 	_, values := readStruct(s, true)
 	return values
 }
@@ -202,7 +196,7 @@ func Table(t SQLTableNamer) string {
 // The placeholders will be comma-separated.
 func Placeholders(num int) string {
 	placeholders := make([]string, num)
-	for pos := 0; pos < num; pos++ {
+	for pos := range num {
 		placeholders[pos] = "?"
 	}
 	return strings.Join(placeholders, ", ")
@@ -212,12 +206,12 @@ func Placeholders(num int) string {
 // the SQLTableNamer a Query was built from, and can list off the column
 // names, in order, that those results represent.
 type Scannable interface {
-	Scan(dst ...interface{}) error
+	Scan(dst ...any) error
 	Columns() ([]string, error)
 }
 
 type pointer struct {
-	addr      interface{}
+	addr      any
 	column    string
 	sortOrder int
 }
@@ -230,13 +224,13 @@ func (p pointers) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
 
 func (p pointers) Less(i, j int) bool { return p[i].sortOrder < p[j].sortOrder }
 
-func getColumnAddrs(s Scannable, in []pointer) ([]interface{}, error) {
-	columns, err := s.Columns()
+func getColumnAddrs(scannable Scannable, columnPointers []pointer) ([]any, error) {
+	columns, err := scannable.Columns()
 	if err != nil {
 		return nil, err
 	}
 	var results pointers
-	for _, pointer := range in {
+	for _, pointer := range columnPointers {
 		for pos, column := range columns {
 			if column == pointer.column {
 				pointer.sortOrder = pos
@@ -246,7 +240,7 @@ func getColumnAddrs(s Scannable, in []pointer) ([]interface{}, error) {
 		}
 	}
 	sort.Sort(results)
-	i := make([]interface{}, 0, len(results))
+	i := make([]any, 0, len(results))
 	for _, res := range results {
 		i = append(i, res.addr)
 	}
@@ -258,40 +252,40 @@ func getColumnAddrs(s Scannable, in []pointer) ([]interface{}, error) {
 // associated with columns, `additional` can be supplied to catch the extra values.
 // The variables in `additional` must be a compatible type with and be in the same
 // order as the columns of `s`.
-func Unmarshal(s Scannable, dst interface{}, additional ...interface{}) error {
-	t := reflect.TypeOf(dst)
-	v := reflect.ValueOf(dst)
-	k := t.Kind()
-	for k == reflect.Interface || k == reflect.Ptr {
-		v = v.Elem()
-		t = v.Type()
-		k = t.Kind()
+func Unmarshal(scannable Scannable, dst any, additional ...any) error {
+	dstType := reflect.TypeOf(dst)
+	dstVal := reflect.ValueOf(dst)
+	dstKind := dstType.Kind()
+	for dstKind == reflect.Interface || dstKind == reflect.Pointer {
+		dstVal = dstVal.Elem()
+		dstType = dstVal.Type()
+		dstKind = dstType.Kind()
 	}
-	if k != reflect.Struct {
-		return s.Scan(dst)
+	if dstKind != reflect.Struct {
+		return scannable.Scan(dst)
 	}
 	props := []pointer{}
-	for i := 0; i < t.NumField(); i++ {
-		if t.Field(i).PkgPath != "" {
+	for fieldIndex := 0; fieldIndex < dstType.NumField(); fieldIndex++ {
+		if dstType.Field(fieldIndex).PkgPath != "" {
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(t.Field(i))
+		field := getFieldColumn(dstType.Field(fieldIndex))
 		if field == "" {
 			continue
 		}
 
 		// Get the value of the field
 		props = append(props, pointer{
-			addr:   v.Field(i).Addr().Interface(),
+			addr:   dstVal.Field(fieldIndex).Addr().Interface(),
 			column: field,
 		})
 	}
 
-	addrs, err := getColumnAddrs(s, props)
+	addrs, err := getColumnAddrs(scannable, props)
 	if err != nil {
 		return err
 	}
 	addrs = append(addrs, additional...)
-	return s.Scan(addrs...)
+	return scannable.Scan(addrs...)
 }
