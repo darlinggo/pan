@@ -103,7 +103,7 @@ func (q *Query) checkCounts() error {
 // not be valid SQL.
 func (q *Query) String() string {
 	var argPos int
-	var res string
+	var res strings.Builder
 	toCheck := q.sql
 	for charIndex := strings.Index(toCheck, "?"); charIndex >= 0; argPos++ {
 		var arg any
@@ -111,13 +111,13 @@ func (q *Query) String() string {
 		if len(q.args) > argPos {
 			arg = q.args[argPos]
 		}
-		res += toCheck[:charIndex]
-		res += fmt.Sprintf("%v", arg)
+		res.WriteString(toCheck[:charIndex])
+		fmt.Fprintf(&res, "%v", arg)
 		toCheck = toCheck[charIndex+1:]
 		charIndex = strings.Index(toCheck, "?")
 	}
-	res += toCheck
-	return res
+	res.WriteString(toCheck)
+	return res.String()
 }
 
 // MySQLString returns a SQL string that can be passed to MySQL to execute your query.
@@ -163,16 +163,16 @@ func (q *Query) PostgreSQLString() (string, error) {
 		return "", err
 	}
 	count := 1
-	var res string
+	var res strings.Builder
 	toCheck := q.sql
 	for i := strings.Index(toCheck, "?"); i >= 0; count++ {
-		res += toCheck[:i]
-		res += "$" + strconv.Itoa(count)
+		res.WriteString(toCheck[:i])
+		res.WriteString("$" + strconv.Itoa(count))
 		toCheck = toCheck[i+1:]
 		i = strings.Index(toCheck, "?")
 	}
-	res += toCheck
-	return res + ";", nil
+	res.WriteString(toCheck)
+	return res.String() + ";", nil
 }
 
 // ComplexExpression starts a Query with a new buffer, so it can be flushed
@@ -250,23 +250,23 @@ func (q *Query) Where() *Query {
 // determined by finding the column name for the passed property on the passed SQLTableNamer.
 // The passed property must be a string that matches, identically, the property name; if it
 // does not, it will panic.
-func (q *Query) Comparison(obj SQLTableNamer, property, operator string, value any) *Query {
-	return q.Expression(Column(obj, property)+" "+operator+" ?", value)
+func (q *Query) Comparison(column, operator string, value any) *Query {
+	return q.Expression(column+" "+operator+" ?", value)
 }
 
 // In adds an expression to the Query’s buffer in the form of "column IN (value, value, value)".
 // `values` are the variables to match against, and `obj` and `property` are used to determine
 // the column. `property` must exactly match the name of a property on `obj`, or the call will
 // panic.
-func (q *Query) In(obj SQLTableNamer, property string, values ...any) *Query {
-	return q.Expression(Column(obj, property)+" IN("+Placeholders(len(values))+")", values...)
+func (q *Query) In(column string, values ...any) *Query {
+	return q.Expression(column+" IN("+Placeholders(len(values))+")", values...)
 }
 
 // Assign adds an expression to the Query’s buffer in the form of "column = ?", and adds `value`
 // to the arguments for this query. `obj` and `property` are used to determine the column.
 // `property` must exactly match the name of a property on `obj`, or the call will panic.
-func (q *Query) Assign(obj SQLTableNamer, property string, value any) *Query {
-	return q.Expression(Column(obj, property)+" = ?", value)
+func (q *Query) Assign(column string, value any) *Query {
+	return q.Expression(column+" = ?", value)
 }
 
 func (q *Query) orderByWithDir(orderClause, dir string) *Query {
@@ -299,6 +299,28 @@ func (q *Query) Limit(limit int64) *Query {
 // as an argument to the Query.
 func (q *Query) Offset(offset int64) *Query {
 	return q.Expression("OFFSET ?", offset)
+}
+
+// Select starts a new [Query] by selecting the specified columns from the
+// specified table.
+func Select(columns []string, table string) *Query {
+	return New("SELECT " + ColumnList(columns).String() + " FROM " + table)
+}
+
+// SelectAll starts a new [Query] by selecting every column associated with a
+// field on the passed [SQLTableNamer] from the table mapped to the
+// [SQLTableNamer].
+//
+// The passed [Flag]s can be used to control how columns will be quoted or
+// qualified.
+func SelectAll(table SQLTableNamer, flags ...Flag) *Query {
+	return Select(Columns(table, flags...), Table(table))
+}
+
+// DeleteFrom starts a new [Query] that will delete from the table mapped to
+// the passed [SQLTableNamer].
+func DeleteFrom(table SQLTableNamer) *Query {
+	return New("DELETE FROM " + Table(table))
 }
 
 // Args returns a slice of the arguments attached to the Query, which should be used when executing

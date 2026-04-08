@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"unicode"
-	"unicode/utf8"
 )
 
 const (
@@ -36,9 +35,8 @@ func toSnake(input string) string {
 	if input == "" {
 		return ""
 	}
-	snake := ""
+	var snake strings.Builder
 	prevWasLower := false
-	buf := make([]byte, 4) //nolint:mnd // unicode characters are 4 bytes
 	for _, character := range input {
 		if !unicode.IsLetter(character) && !unicode.IsDigit(character) {
 			continue
@@ -48,25 +46,26 @@ func toSnake(input string) string {
 		} else if unicode.IsUpper(character) {
 			character = unicode.ToLower(character)
 			if prevWasLower {
-				snake += "_"
+				snake.WriteString("_")
 			}
 			prevWasLower = false
 		}
 
-		n := utf8.EncodeRune(buf, character)
-		snake += string(buf[0:n])
+		snake.WriteRune(character)
 	}
-	return snake
+	return snake.String()
 }
 
-func getFieldColumn(field reflect.StructField) string {
-	// Get the SQL column name, from the tag or infer it
-	columnName := field.Tag.Get(tagName)
+// ColumnName returns the mapped column name for a field, given the field's
+// name and the entire `sql_column:"foo"` tag. The tag may have other keys
+// defined as well.
+func ColumnName(fieldName, fieldTag string) string {
+	columnName := reflect.StructTag(fieldTag).Get(tagName)
 	if columnName == "-" {
 		return ""
 	}
 	if columnName == "" || !validTag(columnName) {
-		columnName = toSnake(field.Name)
+		columnName = toSnake(fieldName)
 	}
 	return columnName
 }
@@ -83,21 +82,27 @@ func hasFlags(list []Flag, passed ...Flag) bool {
 func decorateColumns(columns []string, table string, flags ...Flag) []string {
 	results := make([]string, 0, len(columns))
 	for _, name := range columns {
-		if hasFlags(flags, FlagTicked) {
-			name = "`" + name + "`"
-		} else if hasFlags(flags, FlagDoubleQuoted) {
-			name = `"` + name + `"`
-		}
-		if hasFlags(flags, FlagFull, FlagTicked) {
-			name = "`" + table + "`." + name
-		} else if hasFlags(flags, FlagFull, FlagDoubleQuoted) {
-			name = `"` + table + `".` + name
-		} else if hasFlags(flags, FlagFull) {
-			name = table + "." + name
-		}
-		results = append(results, name)
+		results = append(results, DecorateColumn(name, table, flags...))
 	}
 	return results
+}
+
+// DecorateColumn quotes or qualifies the passed column that belongs to the
+// passed table according to the passed [Flag]s.
+func DecorateColumn(column string, table string, flags ...Flag) string {
+	if hasFlags(flags, FlagTicked) {
+		column = "`" + column + "`"
+	} else if hasFlags(flags, FlagDoubleQuoted) {
+		column = `"` + column + `"`
+	}
+	if hasFlags(flags, FlagFull, FlagTicked) {
+		column = "`" + table + "`." + column
+	} else if hasFlags(flags, FlagFull, FlagDoubleQuoted) {
+		column = `"` + table + `".` + column
+	} else if hasFlags(flags, FlagFull) {
+		column = table + "." + column
+	}
+	return column
 }
 
 // if needsValues is false, we'll attempt to use the cache and `values` will be nil
@@ -125,7 +130,7 @@ func readStruct(namer SQLTableNamer, needsValues bool, flags ...Flag) (columns [
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(namerType.Field(fieldIndex))
+		field := ColumnName(namerType.Field(fieldIndex).Name, string(namerType.Field(fieldIndex).Tag))
 		if field == "" {
 			continue
 		}
@@ -168,7 +173,7 @@ func Column(namer SQLTableNamer, property string, flags ...Flag) string {
 	if !ok {
 		panic("Field not found in type: " + property)
 	}
-	columns := decorateColumns([]string{getFieldColumn(field)}, namer.GetSQLTableName(), flags...)
+	columns := decorateColumns([]string{ColumnName(field.Name, string(field.Tag))}, namer.GetSQLTableName(), flags...)
 	return columns[0]
 }
 
@@ -270,7 +275,7 @@ func Unmarshal(scannable Scannable, dst any, additional ...any) error {
 			// skip unexported fields
 			continue
 		}
-		field := getFieldColumn(dstType.Field(fieldIndex))
+		field := ColumnName(dstType.Field(fieldIndex).Name, string(dstType.Field(fieldIndex).Tag))
 		if field == "" {
 			continue
 		}

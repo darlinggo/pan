@@ -24,7 +24,7 @@ func init() {
 		mysql:    "INSERT INTO test_data (id, title, author_id, body, created, modified) VALUES (?, ?, ?, ?, ?, ?);",
 		postgres: "INSERT INTO test_data (id, title, author_id, body, created, modified) VALUES ($1, $2, $3, $4, $5, $6);",
 	}
-	sqlTable[New("UPDATE "+Table(post)+" SET").Assign(post, "Title", post.Title).Assign(post, "Author", post.Author).Flush(", ").Where().Comparison(post, "ID", "=", post.ID).Flush(" ")] = queryResult{
+	sqlTable[New("UPDATE "+Table(post)+" SET").Assign(Column(post, "Title"), post.Title).Assign(Column(post, "Author"), post.Author).Flush(", ").Where().Comparison(Column(post, "ID"), "=", post.ID).Flush(" ")] = queryResult{
 		mysql:    "UPDATE test_data SET title = ?, author_id = ? WHERE id = ?;",
 		postgres: "UPDATE test_data SET title = $1, author_id = $2 WHERE id = $3;",
 	}
@@ -72,6 +72,6 @@ func BenchmarkInsertGeneration(b *testing.B) {
 func BenchmarkQueryGeneration(b *testing.B) {
 	post := testPost{123, "my post", 1, "this is a test post", time.Now(), nil}
 	for b.Loop() {
-		New("SELECT "+Columns(post).String()+" FROM "+Table(post)).Where().Comparison(post, "ID", "=", post.ID).Expression("OR").In(post, "ID", 123, 456, 789, 101112, 131415).OrderBy(Column(post, "Created")).Limit(10).Flush(" ")
+		New("SELECT "+Columns(post).String()+" FROM "+Table(post)).Where().Comparison(Column(post, "ID"), "=", post.ID).Expression("OR").In(Column(post, "ID"), 123, 456, 789, 101112, 131415).OrderBy(Column(post, "Created")).Limit(10).Flush(" ")
 	}
 }

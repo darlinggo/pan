@@ -3,6 +3,7 @@ package pan
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -121,19 +122,21 @@ var queryTests = []queryTest{
 
 func init() {
 	sql := "lots of args"
-	postgres := sql
-	mysql := sql
+	var postgres strings.Builder
+	postgres.WriteString(sql)
+	var mysql strings.Builder
+	mysql.WriteString(sql)
 	args := []any{}
 	for i := 1; i < 1001; i++ {
 		sql += " ?"
-		mysql += " ?"
-		postgres += fmt.Sprintf(" $%d", i)
+		mysql.WriteString(" ?")
+		fmt.Fprintf(&postgres, " $%d", i)
 		args = append(args, false)
 		if i == 10 || i == 100 || i == 1000 {
 			queryTests = append(queryTests, queryTest{
 				ExpectedResult: queryResult{
-					mysql:    mysql + ";",
-					postgres: postgres + ";",
+					mysql:    mysql.String() + ";",
+					postgres: postgres.String() + ";",
 					err:      nil,
 				},
 				Query: &Query{
