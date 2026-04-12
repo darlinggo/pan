@@ -45,6 +45,17 @@ var generateCmd = clif.Command{
 			},
 		},
 		{
+			Name:        "--table-constant-suffix",
+			Description: "the suffix to append to the type name to create a constant holding the table's name. Only works if the SQLTableNamer just returns a string literal in its GetSQLTableName function. Set to \"\" to disable",
+			Default: []clif.FlagValue{
+				{
+					HasValue:     true,
+					Raw:          "Table",
+					CanonicalKey: "--table-constant-suffix",
+				},
+			},
+		},
+		{
 			Name:          "--all-columns-method",
 			Description:   "the name of the method that should be generated to return all of the column names as a slice of strings. Can be specified multiple times. Will use the first name for each type that doesn't conflict with a field on the type, or omit the method if no non-conflicting name is specified. Set to the empty string to disable generating this method.",
 			AllowMultiple: true,
@@ -107,6 +118,7 @@ type generateHandler struct {
 	ColumnMismatchCheck bool     `flag:"column-mismatch-check"`
 	AllColumnsMethod    []string `flag:"all-columns-method"`
 	GeneratedFilename   string   `flag:"generated-filename"`
+	TableConstantSuffix string   `flag:"table-constant-suffix"`
 	Packages            []string `flag:"-"`
 }
 
@@ -130,6 +142,7 @@ func (handler generateHandler) Handle(ctx context.Context, resp *clif.Response) 
 func (handler generateHandler) generateForPackage(_ context.Context, dir string, impls []SQLTableNamerImpl, resp *clif.Response) {
 	var packageName, packagePath string
 	columnsByFieldByType := map[string]map[string]string{}
+	tables := map[string]string{}
 	for _, impl := range impls {
 		if packageName == "" {
 			packageName = impl.PackageName
@@ -144,6 +157,9 @@ func (handler generateHandler) generateForPackage(_ context.Context, dir string,
 			return
 		}
 		columnsByFieldByType[impl.Name] = map[string]string{}
+		if impl.Table != "" {
+			tables[impl.Name] = impl.Table
+		}
 		for fieldNum := range structInfo.NumFields() {
 			field := structInfo.Field(fieldNum)
 			tag := structInfo.Tag(fieldNum)
@@ -162,6 +178,13 @@ func (handler generateHandler) generateForPackage(_ context.Context, dir string,
 		for _, name := range typeNames {
 			g.Comment(fmt.Sprintf("%s provides helper functions to retrieve the mapped column names for fields on [%s].", name+handler.TypeSuffix, name))
 			g.Id(name + handler.TypeSuffix).Id("columns_" + name).Op("=").Lit(0)
+		}
+		if handler.TableConstantSuffix != "" {
+			g.Line()
+			for name, table := range tables {
+				g.Commentf("%s is the name of the table mapped to %s.", name+handler.TableConstantSuffix, name)
+				g.Id(name + handler.TableConstantSuffix).Op("=").Lit(table)
+			}
 		}
 	})
 	if handler.ColumnMismatchCheck {
@@ -185,15 +208,25 @@ func (handler generateHandler) generateForPackage(_ context.Context, dir string,
 		})
 	}
 	for _, name := range typeNames {
+		tableName, tableKnown := tables[name]
+		table := jen.Id(name + handler.TableConstantSuffix)
+		if handler.TableConstantSuffix == "" {
+			table = jen.Lit(tableName)
+		}
+		methodTable := table
+		if !tableKnown {
+			table = jen.Qual("darlinggo.co/pan", "Table").Call(jen.Id(name).Block())
+			methodTable = jen.Id("tableName")
+		}
 		file.Type().Id("columns_" + name).Int8()
 		fields := columnsByFieldByType[name]
 		fieldNames := slices.Collect(maps.Keys(fields))
 		slices.Sort(fieldNames)
 		for _, fieldName := range fieldNames {
 			column := fields[fieldName]
-			file.Comment(fmt.Sprintf("%s returns the database column name (%q) that [%s.%s] maps to.", fieldName, column, name, fieldName))
+			file.Commentf("%s returns the database column name (%q) that [%s.%s] maps to.", fieldName, column, name, fieldName)
 			file.Func().Params(jen.Id("columns_" + name)).Id(fieldName).Params(jen.Id("flags").Op("...").Qual("darlinggo.co/pan", "Flag")).String().Block(
-				jen.Return(jen.Qual("darlinggo.co/pan", "DecorateColumn").Call(jen.Lit(column), jen.Qual("darlinggo.co/pan", "Table").Call(jen.Id(name).Block()), jen.Id("flags").Op("..."))),
+				jen.Return(jen.Qual("darlinggo.co/pan", "DecorateColumn").Call(jen.Lit(column), table, jen.Id("flags").Op("..."))),
 			)
 		}
 		for _, methodName := range handler.AllColumnsMethod {
@@ -204,16 +237,18 @@ func (handler generateHandler) generateForPackage(_ context.Context, dir string,
 				continue
 			}
 			file.Comment(fmt.Sprintf("%s returns a sorted list of all database columns mapped to [%s].", methodName, name))
-			file.Func().Params(jen.Id("columns_"+name)).Id(methodName).Params(jen.Id("flags").Op("...").Qual("darlinggo.co/pan", "Flag")).Index().String().Block(
-				jen.Id("tableName").Op(":=").Qual("darlinggo.co/pan", "Table").Call(jen.Id(name).Block()),
-				jen.Return(jen.Index().String().ValuesFunc(func(returnValues *jen.Group) {
+			file.Func().Params(jen.Id("columns_" + name)).Id(methodName).Params(jen.Id("flags").Op("...").Qual("darlinggo.co/pan", "Flag")).Index().String().BlockFunc(func(funcValues *jen.Group) {
+				if !tableKnown {
+					funcValues.Id("tableName").Op(":=").Qual("darlinggo.co/pan", "Table").Call(jen.Id(name).Block())
+				}
+				funcValues.Return(jen.Index().String().ValuesFunc(func(returnValues *jen.Group) {
 					for _, fieldName := range fieldNames {
 						column := fields[fieldName]
-						returnValues.Line().Qual("darlinggo.co/pan", "DecorateColumn").Call(jen.Lit(column), jen.Id("tableName"), jen.Id("flags").Op("..."))
+						returnValues.Line().Qual("darlinggo.co/pan", "DecorateColumn").Call(jen.Lit(column), methodTable, jen.Id("flags").Op("..."))
 					}
 					returnValues.Line().Empty()
-				})),
-			)
+				}))
+			})
 			break
 		}
 	}

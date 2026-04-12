@@ -11,6 +11,7 @@ import (
 	"go/types"
 	"maps"
 	"slices"
+	"strconv"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -65,6 +66,7 @@ type SQLTableNamerImpl struct {
 	Name        string
 	PackageName string
 	PackagePath string
+	Table       string
 }
 
 func FindSQLTableNamers(ctx context.Context, dir string, pkgPatterns []string) (map[string][]SQLTableNamerImpl, error) {
@@ -73,7 +75,7 @@ func FindSQLTableNamers(ctx context.Context, dir string, pkgPatterns []string) (
 		return nil, err
 	}
 	pkgs, err := packages.Load(&packages.Config{
-		Mode:    packages.NeedTypes | packages.NeedName,
+		Mode:    packages.NeedTypes | packages.NeedName | packages.NeedSyntax,
 		Context: ctx,
 		Dir:     dir,
 		Tests:   true,
@@ -83,6 +85,7 @@ func FindSQLTableNamers(ctx context.Context, dir string, pkgPatterns []string) (
 	}
 
 	results := map[string][]SQLTableNamerImpl{}
+	typeToTable := map[string]string{}
 	for _, pkg := range pkgs {
 		scope := pkg.Types.Scope()
 		for _, name := range scope.Names() {
@@ -98,10 +101,83 @@ func FindSQLTableNamers(ctx context.Context, dir string, pkgPatterns []string) (
 				})
 			}
 		}
+		if len(results[pkg.Dir]) < 1 {
+			continue
+		}
+		for _, file := range pkg.Syntax {
+			ast.Inspect(file, func(node ast.Node) bool {
+				if node == nil {
+					return false
+				}
+
+				if _, ok := node.(*ast.File); ok {
+					return true
+				}
+
+				funcDecl, ok := node.(*ast.FuncDecl)
+				if !ok {
+					return false
+				}
+
+				if funcDecl.Name.Name != "GetSQLTableName" {
+					return false
+				}
+
+				if len(funcDecl.Body.List) != 1 {
+					return false
+				}
+
+				returnStmt, ok := funcDecl.Body.List[0].(*ast.ReturnStmt)
+				if !ok {
+					return false
+				}
+
+				if len(returnStmt.Results) != 1 {
+					return false
+				}
+
+				tableName, ok := returnStmt.Results[0].(*ast.BasicLit)
+				if !ok {
+					return false
+				}
+
+				if tableName.Kind != token.STRING {
+					return false
+				}
+
+				if len(funcDecl.Recv.List) != 1 {
+					return false
+				}
+
+				var methodName string
+				switch methodType := funcDecl.Recv.List[0].Type.(type) {
+				case *ast.Ident:
+					methodName = methodType.Name
+				case *ast.StarExpr:
+					nonStar, ok := methodType.X.(*ast.Ident)
+					if !ok {
+						return false
+					}
+					methodName = nonStar.Name
+				default:
+					return false
+				}
+
+				typeToTable[pkg.Name+"."+methodName], err = strconv.Unquote(tableName.Value)
+				if err != nil {
+					return false
+				}
+
+				return false
+			})
+		}
 	}
 	for dir, impls := range results {
 		uniqueImpls := map[string]SQLTableNamerImpl{}
 		for _, impl := range impls {
+			if table, ok := typeToTable[impl.PackageName+"."+impl.Name]; ok {
+				impl.Table = table
+			}
 			uniqueImpls[impl.PackageName+"."+impl.Name] = impl
 		}
 		implementerTypes := slices.Collect(maps.Values(uniqueImpls))
